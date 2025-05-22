@@ -376,10 +376,10 @@ High confidence due to:
 
 ## Task Progress
 
-### Phase 1: Core pply_diff Implementation
+### Phase 1: Core apply_diff Implementation
 - [ ] **Setup Dependencies**
   - [ ] Add diff generation library (\diff\)
-  - [ ] Add fuzzy matching libraries (\string-similarity\, \astest-levenshtein\)
+  - [ ] Add fuzzy matching libraries (\string-similarity\, \fastest-levenshtein\)
   - [ ] Update package.json and install dependencies
 - [ ] **Data Structures & Interfaces**
   - [ ] Define \DiffSection\ interface
@@ -410,7 +410,7 @@ High confidence due to:
   - [ ] Implement user approval workflow
   - [ ] Implement status indicators
 - [ ] **Tool Registration**
-  - [ ] Add \pply_diff\ tool to \dit-tools.ts\
+  - [ ] Add \apply_diff\ tool to \edit-tools.ts\
   - [ ] Register tool in server.ts
   - [ ] Add proper error handling and logging
 - [ ] **Testing & Validation**
