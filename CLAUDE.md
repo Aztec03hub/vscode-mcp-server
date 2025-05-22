@@ -370,3 +370,70 @@ High confidence due to:
 ---
 *Implementation started on May 22, 2025*
 *Based on analysis of Block's vscode-mcp repository*
+
+
+---
+
+## Task Progress
+
+### Phase 1: Core pply_diff Implementation
+- [ ] **Setup Dependencies**
+  - [ ] Add diff generation library (\diff\)
+  - [ ] Add fuzzy matching libraries (\string-similarity\, \astest-levenshtein\)
+  - [ ] Update package.json and install dependencies
+- [ ] **Data Structures & Interfaces**
+  - [ ] Define \DiffSection\ interface
+  - [ ] Define \ApplyDiffArgs\ interface
+  - [ ] Define \MatchingOptions\ interface
+  - [ ] Define \MatchResult\ interface
+  - [ ] Define \ValidationResult\ interface
+  - [ ] Define \ConflictInfo\ interface
+- [ ] **Core Fuzzy Matching System**
+  - [ ] Implement \ContentMatcher\ class
+  - [ ] Implement exact match strategy
+  - [ ] Implement normalized match strategy
+  - [ ] Implement contextual search strategy
+  - [ ] Implement similarity matching strategy
+  - [ ] Implement automated best match selection
+- [ ] **Validation System**
+  - [ ] Implement overlap detection
+  - [ ] Implement content validation with fuzzy matching
+  - [ ] Implement conflict detection
+  - [ ] Implement confidence scoring
+- [ ] **Diff Generation & Application**
+  - [ ] Implement unified diff generation
+  - [ ] Implement temporary file management
+  - [ ] Implement atomic file operations
+  - [ ] Implement multiple diff section merging
+- [ ] **VS Code Integration**
+  - [ ] Implement diff viewer integration
+  - [ ] Implement user approval workflow
+  - [ ] Implement status indicators
+- [ ] **Tool Registration**
+  - [ ] Add \pply_diff\ tool to \dit-tools.ts\
+  - [ ] Register tool in server.ts
+  - [ ] Add proper error handling and logging
+- [ ] **Testing & Validation**
+  - [ ] Test single diff scenarios
+  - [ ] Test multiple diff scenarios
+  - [ ] Test fuzzy matching edge cases
+  - [ ] Test error conditions
+  - [ ] Verify VS Code integration
+
+### Phase 2: VS Code Integration Enhancement
+- [ ] Enhanced diff visualization
+- [ ] Smart merging capabilities
+- [ ] Advanced error reporting
+
+### Phase 3: Advanced Features
+- [ ] Diff statistics
+- [ ] Performance optimizations
+- [ ] Enhanced logging
+
+### Current Status
+🚀 **Starting Phase 1 Implementation** - Setting up dependencies and core data structures
+
+### Notes
+- Implementation following established patterns from existing edit-tools.ts
+- Maintaining backward compatibility with single diff use cases
+- Focus on robust error handling and user feedback
