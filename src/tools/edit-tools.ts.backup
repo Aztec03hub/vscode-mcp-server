@@ -278,6 +278,32 @@ async function validateDiffSections(
 
     const workspaceFolder = vscode.workspace.workspaceFolders[0];
     const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    
+    // Get all lines from the file
+    const lines = [];
+    for (let i = 0; i < document.lineCount; i++) {
+        lines.push(document.lineAt(i).text);
+    }
+
+    // Apply changes from bottom to top to avoid line number shifts
+    const sortedChanges = matches
+        .map((match, index) => ({ match, diff: diffs[index] }))
+        .sort((a, b) => b.match.startLine - a.match.startLine);
+
+    for (const { match, diff } of sortedChanges) {
+        console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
+        
+        // Replace the matched lines with new content
+        const newLines = diff.newContent.split('\n');
+        lines.splice(match.startLine, match.endLine - match.startLine + 1, ...newLines);
+    }
+
+    return lines.join('\n');
+}
+
+
+    const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
     
     // Check if file exists
     try {
@@ -396,33 +422,8 @@ async function createModifiedContent(
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders[0];
-    const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
-    const document = await vscode.workspace.openTextDocument(fileUri);
-    
-    // Get all lines from the file
-    const lines = [];
-    for (let i = 0; i < document.lineCount; i++) {
-        lines.push(document.lineAt(i).text);
-    }
-
-    // Apply changes from bottom to top to avoid line number shifts
-    const sortedChanges = matches
-        .map((match, index) => ({ match, diff: diffs[index] }))
-        .sort((a, b) => b.match.startLine - a.match.startLine);
-
-    for (const { match, diff } of sortedChanges) {
-        console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
-        
-        // Replace the matched lines with new content
-        const newLines = diff.newContent.split('\n');
-        lines.splice(match.startLine, match.endLine - match.startLine + 1, ...newLines);
-    }
-
-    return lines.join('\n');
-}
-
 /**
- * Show diff in VS Code and get user approval using improved Quick Pick interface
+ * Show diff in VS Code and get user approval using improved UX
  */
 async function showDiffAndGetApproval(
     filePath: string,
@@ -468,16 +469,10 @@ async function showDiffAndGetApproval(
         try {
             // Configure Quick Pick
             quickPick.title = `Apply Diff: ${filePath}`;
-            quickPick.placeholder = 'Choose an action for the proposed changes (use arrow keys, Enter to select, Escape to cancel)';
-            quickPick.ignoreFocusOut = true; // Don't close when focus is lost
+            quickPick.placeholder = 'Choose an action for the proposed changes';
             
-            // Create items with proper typing
-            const items: Array<{
-                label: string;
-                description: string;
-                detail: string;
-                action: 'apply' | 'cancel' | 'info';
-            }> = [
+            // Create items
+            const items = [
                 {
                     label: '$(check) Apply Changes',
                     description: 'Apply all diff sections to the file',
@@ -503,6 +498,7 @@ async function showDiffAndGetApproval(
             }
             
             quickPick.items = items;
+            quickPick.ignoreFocusOut = true; // Don't close when focus is lost
             
             // Show the Quick Pick
             quickPick.show();
@@ -510,7 +506,7 @@ async function showDiffAndGetApproval(
             // Handle user selection
             const userChoice = await new Promise<boolean>((resolve) => {
                 quickPick.onDidAccept(() => {
-                    const selected = quickPick.selectedItems[0] as typeof items[0];
+                    const selected = quickPick.selectedItems[0];
                     if (selected) {
                         switch (selected.action) {
                             case 'apply':
@@ -520,9 +516,9 @@ async function showDiffAndGetApproval(
                                 resolve(false);
                                 break;
                             case 'info':
-                                // Show more detailed warning info, but don't resolve yet
+                                // Show more detailed warning info, don't resolve yet
                                 vscode.window.showWarningMessage(
-                                    `Diff Warnings:\\n${warnings.join('\\n')}`,
+                                    `Diff Warnings:\n${warnings.join('\n')}`,
                                     'Continue with Apply',
                                     'Cancel'
                                 ).then(choice => {
@@ -556,7 +552,7 @@ async function showDiffAndGetApproval(
             console.warn('[showDiffAndGetApproval] Failed to clean up temp files:', error);
         }
     }
-}
+
 
 /**
  * Apply the diff changes to the file
@@ -601,8 +597,6 @@ async function applyDiffToFile(
     } else {
         throw new Error(`Failed to apply changes to ${filePath}`);
     }
-}
-
 /**
  * Main apply_diff function with improved progress feedback
  */
@@ -624,8 +618,8 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
         progress.report({ increment: 30, message: "Validation complete" });
         
         if (!validation.isValid) {
-            const errorMsg = `Validation failed for ${args.filePath}:\\n` +
-                `Conflicts: ${validation.conflicts.map(c => c.description).join(', ')}\\n` +
+            const errorMsg = `Validation failed for ${args.filePath}:\n` +
+                `Conflicts: ${validation.conflicts.map(c => c.description).join(', ')}\n` +
                 `Suggestions: ${validation.suggestions.join(', ')}`;
             throw new Error(errorMsg);
         }
