@@ -422,7 +422,7 @@ async function createModifiedContent(
 }
 
 /**
- * Show diff in VS Code and get user approval using improved Quick Pick interface
+ * Show diff in VS Code and get user approval using Status Bar Buttons
  */
 async function showDiffAndGetApproval(
     filePath: string,
@@ -433,11 +433,30 @@ async function showDiffAndGetApproval(
 ): Promise<boolean> {
     console.log(`[showDiffAndGetApproval] Showing diff for ${filePath}`);
     
+    if (!vscode.workspace.workspaceFolders) {
+        throw new Error('No workspace folder is open');
+    }
+
+    const workspaceFolder = vscode.workspace.workspaceFolders[0];
+    const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
+    
+    // Check if file exists to determine the flow
+    const fileExists = await vscode.workspace.fs.stat(fileUri).then(() => true, () => false);
+    
     // Create temporary files for diff
-    const tempDir = await vscode.workspace.fs.readDirectory(vscode.Uri.file(require('os').tmpdir()));
+    const tempDir = require('os').tmpdir();
     const timestamp = Date.now();
     const originalTempPath = `apply-diff-original-${timestamp}.tmp`;
     const modifiedTempPath = `apply-diff-modified-${timestamp}.tmp`;
+    
+    // Status bar items for user approval
+    let approveButton: vscode.StatusBarItem | undefined;
+    let rejectButton: vscode.StatusBarItem | undefined;
+    let infoButton: vscode.StatusBarItem | undefined;
+    
+    // Commands for approval actions
+    let approveCommand: vscode.Disposable | undefined;
+    let rejectCommand: vscode.Disposable | undefined;
     
     try {
         // Write temporary files
@@ -462,96 +481,122 @@ async function showDiffAndGetApproval(
             diffTitle
         );
         
-        // Use Quick Pick for better UX - non-modal, keyboard friendly
-        const quickPick = vscode.window.createQuickPick();
         
-        try {
-            // Configure Quick Pick
-            quickPick.title = `Apply Diff: ${filePath}`;
-            quickPick.placeholder = 'Choose an action for the proposed changes (use arrow keys, Enter to select, Escape to cancel)';
-            quickPick.ignoreFocusOut = true; // Don't close when focus is lost
-            
-            // Create items with proper typing
-            const items: Array<{
-                label: string;
-                description: string;
-                detail: string;
-                action: 'apply' | 'cancel' | 'info';
-            }> = [
-                {
-                    label: '$(check) Apply Changes',
-                    description: 'Apply all diff sections to the file',
-                    detail: description || 'Apply the proposed changes',
-                    action: 'apply'
-                },
-                {
-                    label: '$(x) Cancel',
-                    description: 'Reject the changes and keep original file',
-                    detail: 'No changes will be made',
-                    action: 'cancel'
+        // Create status bar buttons
+        approveButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
+        approveButton.text = '$(check) Apply Changes';
+        approveButton.tooltip = 'Apply all proposed changes to the file';
+        approveButton.command = 'mcp.apply-diff.approve';
+        approveButton.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+        approveButton.show();
+
+        rejectButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 999);
+        rejectButton.text = '$(x) Reject Changes';
+        rejectButton.tooltip = 'Reject changes and keep original file';
+        rejectButton.command = 'mcp.apply-diff.reject';
+        rejectButton.show();
+
+        // Add info button showing file context
+        infoButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 998);
+        const diffCount = modifiedContent.split('\n').length - originalContent.split('\n').length;
+        const statusText = fileExists ? 'Modifying' : 'Creating';
+        const baseFileName = require('path').basename(filePath);
+        infoButton.text = `$(info) ${statusText} ${baseFileName} (${Math.abs(diffCount)} line ${diffCount >= 0 ? 'additions' : 'deletions'})`;
+        infoButton.tooltip = fileExists 
+            ? `Reviewing changes to existing file: ${filePath}`
+            : `Creating new file: ${filePath}`;
+        infoButton.show();
+        
+        // Show warnings if any
+        if (warnings.length > 0) {
+            vscode.window.showWarningMessage(
+                `Diff has ${warnings.length} warning(s). Review carefully before applying.`,
+                { modal: false },
+                'Show Details'
+            ).then(choice => {
+                if (choice === 'Show Details') {
+                    vscode.window.showInformationMessage(warnings.join('\n'), { modal: false });
                 }
-            ];
-            
-            // Add warning items if there are warnings
-            if (warnings.length > 0) {
-                items.unshift({
-                    label: '$(warning) Warnings Detected',
-                    description: `${warnings.length} warning(s) - review before applying`,
-                    detail: warnings.join(' | '),
-                    action: 'info'
-                });
-            }
-            
-            quickPick.items = items;
-            
-            // Show the Quick Pick
-            quickPick.show();
-            
-            // Handle user selection
-            const userChoice = await new Promise<boolean>((resolve) => {
-                quickPick.onDidAccept(() => {
-                    const selected = quickPick.selectedItems[0] as typeof items[0];
-                    if (selected) {
-                        switch (selected.action) {
-                            case 'apply':
-                                resolve(true);
-                                break;
-                            case 'cancel':
-                                resolve(false);
-                                break;
-                            case 'info':
-                                // Show more detailed warning info, but don't resolve yet
-                                vscode.window.showWarningMessage(
-                                    `Diff Warnings:\\n${warnings.join('\\n')}`,
-                                    'Continue with Apply',
-                                    'Cancel'
-                                ).then(choice => {
-                                    resolve(choice === 'Continue with Apply');
-                                });
-                                break;
-                        }
-                    }
-                });
-                
-                quickPick.onDidHide(() => {
-                    // If Quick Pick is dismissed without selection, treat as cancel
-                    resolve(false);
-                });
             });
-            
-            return userChoice;
-            
-        } finally {
-            // Clean up Quick Pick
-            quickPick.dispose();
         }
         
+        // Wait for user decision via status bar buttons
+        const userChoice = await new Promise<boolean>((resolve) => {
+            let resolved = false;
+            
+            // Register approval command
+            approveCommand = vscode.commands.registerCommand('mcp.apply-diff.approve', () => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve(true);
+                }
+            });
+            
+            // Register rejection command
+            rejectCommand = vscode.commands.registerCommand('mcp.apply-diff.reject', () => {
+                if (!resolved) {
+                    resolved = true;
+                    resolve(false);
+                }
+            });
+            
+            // Optional: Auto-resolve after a timeout (e.g., 5 minutes)
+            setTimeout(() => {
+                if (!resolved) {
+                    resolved = true;
+                    console.log('[showDiffAndGetApproval] Auto-rejecting due to timeout');
+                    resolve(false);
+                }
+            }, 5 * 60 * 1000); // 5 minutes timeout
+        });
+        
+        return userChoice;
+        
     } finally {
+        // Clean up status bar buttons and commands
+        try {
+            approveButton?.dispose();
+            rejectButton?.dispose();
+            infoButton?.dispose();
+            approveCommand?.dispose();
+            rejectCommand?.dispose();
+        } catch (error) {
+            console.warn('[showDiffAndGetApproval] Failed to dispose UI elements:', error);
+        }
+        
+        // Close diff view properly - Enhanced tab detection
+        try {
+            // Find and close the diff tab using multiple patterns
+            const tabs = vscode.window.tabGroups.all.flatMap(group => group.tabs);
+            const baseFileName = require('path').basename(filePath);
+            const diffTab = tabs.find(tab => {
+                const label = tab.label;
+                return (
+                    label.includes(baseFileName) && (
+                        label.includes('Original ↔ LLM Changes') ||
+                        label.includes('New File Creation') ||
+                        label.includes('Apply Diff:') ||
+                        label.includes('(Editable)')
+                    )
+                );
+            });
+            
+            if (diffTab) {
+                await vscode.window.tabGroups.close(diffTab);
+                console.log('[showDiffAndGetApproval] Closed diff tab');
+            } else {
+                console.log('[showDiffAndGetApproval] No matching diff tab found to close');
+            }
+        } catch (error) {
+            console.warn('[showDiffAndGetApproval] Failed to close diff tab:', error);
+        }
+        
         // Clean up temporary files
         try {
-            const tempDirUri = vscode.Uri.file(require('os').tmpdir());
+            const tempDirUri = vscode.Uri.file(tempDir);
             await vscode.workspace.fs.delete(vscode.Uri.joinPath(tempDirUri, originalTempPath));
             await vscode.workspace.fs.delete(vscode.Uri.joinPath(tempDirUri, modifiedTempPath));
+            console.log('[showDiffAndGetApproval] Cleaned up temporary files');
         } catch (error) {
             console.warn('[showDiffAndGetApproval] Failed to clean up temp files:', error);
         }
