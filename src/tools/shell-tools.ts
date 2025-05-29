@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from 'zod';
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -471,6 +472,58 @@ export async function executeShellCommand(
 }
 
 /**
+ * Test function to check if shell integration cwd updates after delays
+ */
+export async function testShellIntegrationCwd(): Promise<string> {
+    const terminal = vscode.window.createTerminal('CWD Test Terminal');
+    terminal.show();
+    
+    // Wait for shell integration
+    const startTime = Date.now();
+    while (!terminal.shellIntegration && Date.now() - startTime < 5000) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    
+    if (!terminal.shellIntegration) {
+        return 'Shell integration not available after 5 seconds';
+    }
+    
+    const results: string[] = [];
+    
+    // Get initial cwd
+    const initialCwd = terminal.shellIntegration.cwd?.fsPath || 'undefined';
+    results.push(`Initial CWD: ${initialCwd}`);
+    
+    // Execute cd command
+    terminal.sendText('cd src');
+    results.push('\nExecuted: cd src');
+    
+    // Test various delays
+    const delays = [100, 500, 1000, 2000, 3000, 5000];
+    
+    for (const delay of delays) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+        const cwd = terminal.shellIntegration.cwd?.fsPath || 'undefined';
+        results.push(`After ${delay}ms: ${cwd}`);
+        
+        // If cwd changed, we found the minimum delay needed
+        if (cwd !== initialCwd && cwd !== 'undefined') {
+            results.push(`\n✓ CWD updated after ${delay}ms total wait time`);
+            break;
+        }
+    }
+    
+    // Final check
+    const finalCwd = terminal.shellIntegration.cwd?.fsPath || 'undefined';
+    if (finalCwd === initialCwd || finalCwd === 'undefined') {
+        results.push('\n✗ CWD never updated even after 11.6 seconds');
+    }
+    
+    terminal.dispose();
+    return results.join('\n');
+}
+
+/**
  * Registers MCP shell-related tools with the server
  * @param server MCP server instance
  * @param terminal The terminal to use for command execution
@@ -617,20 +670,35 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 if (timedOut) {
                     cwdAfter = cwdBefore;
                 } else {
-                    // Use the cwd parameter if provided, otherwise keep the same as before
-                    if (cwd && cwd !== '.') {
-                        cwdAfter = cwd;
+                    // Wait a bit for shell integration to update (our test showed 100ms is enough, use 200ms for safety)
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    
+                    // Try to get the current directory from shell integration
+                    if (terminal.shellIntegration?.cwd) {
+                        cwdAfter = terminal.shellIntegration.cwd.fsPath;
+                        
+                        // Remove "Path----" prefix if present (PowerShell pwd output artifact)
+                        if (cwdAfter.startsWith('Path----')) {
+                            cwdAfter = cwdAfter.substring(8); // Remove "Path----"
+                        }
+                        
+                        console.log(`[Shell Tools] Got cwd from shell integration: ${cwdAfter}`);
                     } else {
-                        cwdAfter = cwdBefore;
+                        // Fallback if shell integration doesn't provide cwd
+                        console.log('[Shell Tools] Shell integration cwd not available, using fallback');
+                        if (cwd && cwd !== '.') {
+                            cwdAfter = cwd;
+                        } else {
+                            cwdAfter = cwdBefore;
+                        }
                     }
                 }
                 
                 // Update shell status
                 if (!timedOut) {
                     registry.updateShellStatus(managedShell.id, 'idle');
-                    if (cwd && cwd !== '.') {
-                        registry.updateCurrentDirectory(managedShell.id, cwd);
-                    }
+                    // Update the shell's current directory with the actual directory after command execution
+                    registry.updateCurrentDirectory(managedShell.id, cwdAfter);
                 }
                 
                 // Detect shell type
@@ -818,6 +886,33 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 throw new Error(`Failed to send input to shell: ${errorMessage}`);
+            }
+        }
+    );
+
+    // Add test_shell_cwd tool
+    server.tool(
+        'test_shell_cwd',
+        'Test shell integration cwd timing to see how long it takes to update after directory changes',
+        {},
+        async (): Promise<CallToolResult> => {
+            try {
+                const testResult = await testShellIntegrationCwd();
+                
+                const result: CallToolResult = {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `**Shell Integration CWD Test Results**\n\n${testResult}`
+                        }
+                    ]
+                };
+                
+                return result;
+            } catch (error) {
+                console.error('[Shell Tools] Error in test_shell_cwd tool:', error);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                throw new Error(`Test failed: ${errorMessage}`);
             }
         }
     );
