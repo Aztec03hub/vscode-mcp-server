@@ -11,6 +11,9 @@ let statusBarItem: vscode.StatusBarItem | undefined;
 let sharedTerminal: vscode.Terminal | undefined;
 // Server state - disabled by default
 let serverEnabled: boolean = false;
+// Auto-approval mode for apply_diff
+let autoApprovalEnabled: boolean = false;
+let autoApprovalStatusBar: vscode.StatusBarItem | undefined;
 
 // Terminal name constant
 const TERMINAL_NAME = 'MCP Shell Commands';
@@ -54,7 +57,57 @@ function updateStatusBar(port: number) {
         // Use a subtle color to indicate disabled state
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     }
-    statusBarItem.show();
+}
+
+// Function to update auto-approval status bar
+function updateAutoApprovalStatusBar() {
+    if (!autoApprovalStatusBar) {
+        return;
+    }
+
+    if (autoApprovalEnabled) {
+        autoApprovalStatusBar.text = '$(pass-filled) Auto-Approve: ON';
+        autoApprovalStatusBar.tooltip = 'Apply Diff Auto-Approval is ENABLED - diffs will be applied automatically without preview (Click to disable)';
+        autoApprovalStatusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+    } else {
+        autoApprovalStatusBar.text = '$(circle-outline) Auto-Approve: OFF';
+        autoApprovalStatusBar.tooltip = 'Apply Diff Auto-Approval is DISABLED - diffs require manual approval (Click to enable)';
+        autoApprovalStatusBar.backgroundColor = undefined;
+    }
+}
+
+// Function to toggle auto-approval mode
+async function toggleAutoApproval(context: vscode.ExtensionContext) {
+    autoApprovalEnabled = !autoApprovalEnabled;
+    
+    // Save state
+    await context.globalState.update('autoApprovalEnabled', autoApprovalEnabled);
+    
+    // Update status bar
+    updateAutoApprovalStatusBar();
+    
+    // Show warning when enabling
+    if (autoApprovalEnabled) {
+        const result = await vscode.window.showWarningMessage(
+            'Auto-Approval Mode ENABLED: All apply_diff operations will be automatically approved without preview. This can be dangerous! Use only for testing.',
+            { modal: true },
+            'Keep Enabled',
+            'Disable'
+        );
+        
+        if (result === 'Disable') {
+            autoApprovalEnabled = false;
+            await context.globalState.update('autoApprovalEnabled', false);
+            updateAutoApprovalStatusBar();
+        }
+    } else {
+        vscode.window.showInformationMessage('Auto-Approval Mode disabled. Apply_diff operations will require manual approval.');
+    }
+}
+
+// Export function for other modules to check auto-approval status
+export function isAutoApprovalEnabled(): boolean {
+    return autoApprovalEnabled;
 }
 
 // Function to toggle server state
@@ -140,16 +193,30 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Load saved state or use configured default
         serverEnabled = context.globalState.get('mcpServerEnabled', defaultEnabled);
+        autoApprovalEnabled = context.globalState.get('autoApprovalEnabled', false);
         
         logger.info(`[activate] Using port ${port} from configuration`);
         logger.info(`[activate] Server enabled: ${serverEnabled}`);
+        logger.info(`[activate] Auto-approval enabled: ${autoApprovalEnabled}`);
 
-        // Create status bar item
+        // Create server status bar item
         statusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             100
         );
         statusBarItem.command = 'vscode-mcp-server.toggleServer';
+        statusBarItem.show();
+        updateStatusBar(port);
+        
+        // Create auto-approval status bar item
+        autoApprovalStatusBar = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            99
+        );
+        autoApprovalStatusBar.command = 'vscode-mcp-server.toggleAutoApproval';
+        autoApprovalStatusBar.show();
+        updateAutoApprovalStatusBar();
+        context.subscriptions.push(autoApprovalStatusBar);
         
         // Only start the server if enabled
         if (serverEnabled) {
@@ -197,12 +264,25 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
             }
         );
+        
+        const toggleAutoApprovalCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleAutoApproval',
+            () => toggleAutoApproval(context)
+        );
+        
+        // Add command to check auto-approval status (for tests)
+        const isAutoApprovalEnabledCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.isAutoApprovalEnabled',
+            () => autoApprovalEnabled
+        );
 
         // Add all disposables to the context subscriptions
         context.subscriptions.push(
             statusBarItem,
             toggleServerCommand,
             showServerInfoCommand,
+            toggleAutoApprovalCommand,
+            isAutoApprovalEnabledCommand,
             { dispose: async () => mcpServer && await mcpServer.stop() }
         );
     } catch (error) {
@@ -215,6 +295,11 @@ export async function deactivate() {
     if (statusBarItem) {
         statusBarItem.dispose();
         statusBarItem = undefined;
+    }
+    
+    if (autoApprovalStatusBar) {
+        autoApprovalStatusBar.dispose();
+        autoApprovalStatusBar = undefined;
     }
 
     // Dispose the shared terminal

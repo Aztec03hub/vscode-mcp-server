@@ -4,25 +4,21 @@ import { z } from 'zod';
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createTwoFilesPatch } from 'diff';
 import { distance } from 'fastest-levenshtein';
-import { isAutoApprovalEnabled } from '../extension';
 
 // ===== Apply Diff Tool Interfaces =====
 
 interface DiffSection {
     startLine: number;     // 0-based line number
     endLine: number;       // 0-based line number (inclusive)
-    search?: string;        // Content to search for (formerly originalContent)
-    replace?: string;       // Content to replace with (formerly newContent)
+    originalContent: string;
+    newContent: string;
     description?: string;  // Optional description for this section
-    // Deprecated - for backward compatibility
-    originalContent?: string;
-    newContent?: string;
 }
 
 interface ApplyDiffArgs {
     filePath: string;
-    description?: string;  // Overall description (moved up in parameter order)
     diffs: DiffSection[];  // Array of diff sections
+    description?: string;  // Overall description
 }
 
 interface MatchingOptions {
@@ -56,406 +52,6 @@ interface ConflictInfo {
     diffIndex2?: number;
     description: string;
     suggestion: string;
-}
-
-// ===== Enhanced Diagnostics =====
-
-/**
- * Detailed diagnostic information for failed matches
- */
-interface DiagnosticInfo {
-    expected: string;        // What we were searching for
-    actualContent: string[]; // What we found at various locations  
-    searchLocations: number[]; // Line numbers where we looked
-    bestMatch?: {
-        content: string;
-        location: number;
-        confidence: number;
-        strategy: string;
-    };
-    attempts: ValidationAttempt[];
-}
-
-/**
- * Error levels for progressive disclosure
- */
-enum ErrorLevel {
-    SIMPLE = 1,    // Basic "not found" message
-    DETAILED = 2,  // Show partial matches
-    FULL = 3       // Complete diagnostic with all attempts
-}
-
-/**
- * Enhanced error with diagnostic information
- */
-class ApplyDiffError extends Error {
-    constructor(
-        message: string,
-        public diagnostics: DiagnosticInfo,
-        public level: ErrorLevel = ErrorLevel.DETAILED
-    ) {
-        super(message);
-        this.name = 'ApplyDiffError';
-    }
-    
-    /**
-     * Format error message based on error level
-     */
-    format(level?: ErrorLevel): string {
-        const useLevel = level || this.level;
-        const lines: string[] = [];
-        
-        // Header
-        lines.push('Error: ' + this.message);
-        lines.push('=' .repeat(60));
-        
-        switch (useLevel) {
-            case ErrorLevel.SIMPLE:
-                lines.push('\nCould not find the search content in the file.');
-                lines.push('Suggestion: Check if the code has been modified or update line numbers.');
-                break;
-                
-            case ErrorLevel.DETAILED:
-                lines.push('\nExpected (search content):');
-                lines.push('```');
-                lines.push(this.diagnostics.expected);
-                lines.push('```');
-                
-                if (this.diagnostics.bestMatch) {
-                    lines.push(`\nBest match found at line ${this.diagnostics.bestMatch.location} (confidence: ${(this.diagnostics.bestMatch.confidence * 100).toFixed(1)}%):`);
-                    lines.push('```');
-                    lines.push(this.diagnostics.bestMatch.content);
-                    lines.push('```');
-                    lines.push(`\nMatch strategy: ${this.diagnostics.bestMatch.strategy}`);
-                }
-                
-                lines.push('\nSuggestions:');
-                lines.push('- Check if the code has been modified');
-                lines.push('- Try using a smaller search pattern');
-                lines.push('- Verify the line numbers are correct');
-                break;
-                
-            case ErrorLevel.FULL:
-                lines.push('\nExpected (search content):');
-                lines.push('```');
-                lines.push(this.diagnostics.expected);
-                lines.push('```');
-                
-                lines.push('\nValidation attempts:');
-                for (const attempt of this.diagnostics.attempts) {
-                    lines.push(`\n  ${attempt.strategy.name} (Level ${attempt.strategy.level}):`);
-                    if (attempt.result) {
-                        lines.push(`    Result: Match found (confidence: ${(attempt.result.confidence * 100).toFixed(1)}%)`);
-                    } else if (attempt.error) {
-                        lines.push(`    Result: Error - ${attempt.error}`);
-                    } else {
-                        lines.push(`    Result: No match`);
-                    }
-                    lines.push(`    Duration: ${attempt.duration}ms`);
-                }
-                
-                if (this.diagnostics.actualContent.length > 0) {
-                    lines.push('\nContent found at searched locations:');
-                    for (let i = 0; i < Math.min(3, this.diagnostics.actualContent.length); i++) {
-                        lines.push(`\n  Line ${this.diagnostics.searchLocations[i]}:`);
-                        lines.push('  ```');
-                        lines.push('  ' + this.diagnostics.actualContent[i].split('\n').join('\n  '));
-                        lines.push('  ```');
-                    }
-                }
-                break;
-        }
-        
-        return lines.join('\n');
-    }
-}
-
-// ===== Parameter Compatibility Layer =====
-
-/**
- * A normalized diff section with all required fields populated
- */
-interface NormalizedDiffSection extends DiffSection {
-    search: string;    // Always populated after normalization
-    replace: string;   // Always populated after normalization
-}
-
-/**
- * Normalize diff sections to handle both old and new parameter names
- */
-function normalizeDiffSections(diffs: DiffSection[]): NormalizedDiffSection[] {
-    return diffs.map((diff, index) => {
-        const normalized: DiffSection = { ...diff };
-        
-        // Handle backward compatibility
-        if (diff.originalContent !== undefined && diff.search === undefined) {
-            console.warn(`[apply_diff] Deprecation warning: 'originalContent' parameter in diff[${index}] is deprecated. Use 'search' instead.`);
-            normalized.search = diff.originalContent;
-        }
-        if (diff.newContent !== undefined && diff.replace === undefined) {
-            console.warn(`[apply_diff] Deprecation warning: 'newContent' parameter in diff[${index}] is deprecated. Use 'replace' instead.`);
-            normalized.replace = diff.newContent;
-        }
-        
-        // Ensure required fields are present
-        if (normalized.search === undefined && diff.originalContent === undefined) {
-            throw new Error(`Diff section ${index} missing required 'search' parameter`);
-        }
-        if (normalized.replace === undefined && diff.newContent === undefined) {
-            throw new Error(`Diff section ${index} missing required 'replace' parameter`);
-        }
-        
-        // Use new names if not already set
-        normalized.search = normalized.search || diff.originalContent || '';
-        normalized.replace = normalized.replace || diff.newContent || '';
-        
-        return normalized as NormalizedDiffSection;
-    });
-}
-
-// ===== Validation Hierarchy Implementation =====
-
-/**
- * Represents a validation strategy with its configuration
- */
-interface ValidationStrategy {
-    name: string;
-    level: number;
-    description: string;
-    execute: (matcher: ContentMatcher, lines: string[], targetContent: string, startHint?: number) => MatchResult | null;
-}
-
-/**
- * Represents an attempt to validate content
- */
-interface ValidationAttempt {
-    strategy: ValidationStrategy;
-    result: MatchResult | null;
-    duration: number;
-    error?: string;
-}
-
-/**
- * Manages hierarchical validation strategies with progressive fallback
- */
-class ValidationHierarchy {
-    private strategies: ValidationStrategy[] = [];
-    
-    constructor() {
-        this.initializeStrategies();
-    }
-    
-    private initializeStrategies(): void {
-        // Level 1: Strict Validation
-        this.strategies.push({
-            name: 'exact-match-at-hint',
-            level: 1,
-            description: 'Exact match at hinted line location',
-            execute: (matcher, lines, targetContent, startHint) => {
-                if (startHint !== undefined) {
-                    // Try exact location first
-                    const targetLines = targetContent.split('\n').length;
-                    if (startHint + targetLines <= lines.length) {
-                        const exactContent = lines.slice(startHint, startHint + targetLines).join('\n');
-                        if (exactContent === targetContent) {
-                            return {
-                                startLine: startHint,
-                                endLine: startHint + targetLines - 1,
-                                confidence: 1.0,
-                                strategy: 'exact-match-at-hint',
-                                actualContent: exactContent,
-                                issues: []
-                            };
-                        }
-                    }
-                }
-                return null;
-            }
-        });
-        
-        this.strategies.push({
-            name: 'exact-match-near-hint',
-            level: 1,
-            description: 'Exact match near hinted line (±5 lines)',
-            execute: (matcher, lines, targetContent, startHint) => {
-                if (startHint !== undefined) {
-                    return matcher.findExactMatchWithRadius(lines, targetContent, startHint, 5);
-                }
-                return null;
-            }
-        });
-        
-        this.strategies.push({
-            name: 'exact-match',
-            level: 1,
-            description: 'Character-for-character exact matching including whitespace',
-            execute: (matcher, lines, targetContent, startHint) => {
-                // Use hint-aware matching if hint provided
-                if (startHint !== undefined) {
-                    return matcher.findBestMatchWithHint(lines, targetContent, startHint);
-                }
-                return matcher.findExactMatch(lines, targetContent, startHint);
-            }
-        });
-        
-        // Level 2: Permissive Validation
-        this.strategies.push({
-            name: 'normalized-whitespace',
-            level: 2,
-            description: 'Whitespace-normalized matching (ignores leading/trailing whitespace)',
-            execute: (matcher, lines, targetContent) => {
-                return matcher.findNormalizedMatch(lines, targetContent, {
-                    ignoreLeadingWhitespace: true,
-                    ignoreTrailingWhitespace: true,
-                    normalizeIndentation: true,
-                    caseSensitive: true
-                });
-            }
-        });
-        
-        this.strategies.push({
-            name: 'case-insensitive',
-            level: 2,
-            description: 'Case-insensitive matching',
-            execute: (matcher, lines, targetContent) => {
-                return matcher.findNormalizedMatch(lines, targetContent, {
-                    ignoreLeadingWhitespace: true,
-                    ignoreTrailingWhitespace: true,
-                    normalizeIndentation: true,
-                    caseSensitive: false
-                });
-            }
-        });
-        
-        // Level 3: Fuzzy Validation
-        this.strategies.push({
-            name: 'similarity-high',
-            level: 3,
-            description: 'High-confidence similarity matching (90%+)',
-            execute: (matcher, lines, targetContent) => {
-                const matches = matcher.findSimilarityMatch(lines, targetContent, 0.9);
-                return matcher.selectBestMatch(matches, 0.9);
-            }
-        });
-        
-        this.strategies.push({
-            name: 'similarity-medium',
-            level: 3,
-            description: 'Medium-confidence similarity matching (80%+)',
-            execute: (matcher, lines, targetContent) => {
-                const matches = matcher.findSimilarityMatch(lines, targetContent, 0.8);
-                return matcher.selectBestMatch(matches, 0.8);
-            }
-        });
-        
-        this.strategies.push({
-            name: 'similarity-low',
-            level: 3,
-            description: 'Low-confidence similarity matching (70%+)',
-            execute: (matcher, lines, targetContent) => {
-                const matches = matcher.findSimilarityMatch(lines, targetContent, 0.7);
-                return matcher.selectBestMatch(matches, 0.7);
-            }
-        });
-        
-        this.strategies.push({
-            name: 'contextual',
-            level: 3,
-            description: 'Contextual matching using surrounding code',
-            execute: (matcher, lines, targetContent) => {
-                return matcher.findContextualMatch(lines, targetContent, 3);
-            }
-        });
-    }
-    
-    /**
-     * Execute validation strategies in hierarchical order
-     */
-    async executeHierarchy(
-        matcher: ContentMatcher,
-        lines: string[],
-        targetContent: string,
-        startHint?: number
-    ): Promise<{
-        match: MatchResult | null;
-        attempts: ValidationAttempt[];
-        totalDuration: number;
-    }> {
-        const attempts: ValidationAttempt[] = [];
-        const startTime = Date.now();
-        let match: MatchResult | null = null;
-        
-        // Execute strategies in order until a match is found
-        for (const strategy of this.strategies) {
-            const attemptStart = Date.now();
-            
-            try {
-                console.log(`[ValidationHierarchy] Trying strategy: ${strategy.name} (level ${strategy.level})`);
-                const result = strategy.execute(matcher, lines, targetContent, startHint);
-                
-                attempts.push({
-                    strategy,
-                    result,
-                    duration: Date.now() - attemptStart
-                });
-                
-                if (result) {
-                    match = result;
-                    console.log(`[ValidationHierarchy] Match found with ${strategy.name} (confidence: ${result.confidence})`);
-                    break;
-                }
-            } catch (error) {
-                attempts.push({
-                    strategy,
-                    result: null,
-                    duration: Date.now() - attemptStart,
-                    error: error instanceof Error ? error.message : 'Unknown error'
-                });
-            }
-        }
-        
-        return {
-            match,
-            attempts,
-            totalDuration: Date.now() - startTime
-        };
-    }
-    
-    /**
-     * Get strategies by level
-     */
-    getStrategiesByLevel(level: number): ValidationStrategy[] {
-        return this.strategies.filter(s => s.level === level);
-    }
-    
-    /**
-     * Generate a detailed report of validation attempts
-     */
-    generateReport(attempts: ValidationAttempt[]): string {
-        const lines = ['Validation Hierarchy Report:'];
-        lines.push('=' .repeat(50));
-        
-        for (const attempt of attempts) {
-            lines.push(`\nStrategy: ${attempt.strategy.name} (Level ${attempt.strategy.level})`);
-            lines.push(`Description: ${attempt.strategy.description}`);
-            lines.push(`Duration: ${attempt.duration}ms`);
-            
-            if (attempt.result) {
-                lines.push(`Result: MATCH FOUND`);
-                lines.push(`  - Confidence: ${(attempt.result.confidence * 100).toFixed(1)}%`);
-                lines.push(`  - Lines: ${attempt.result.startLine}-${attempt.result.endLine}`);
-                if (attempt.result.issues && attempt.result.issues.length > 0) {
-                    lines.push(`  - Issues: ${attempt.result.issues.join(', ')}`);
-                }
-            } else if (attempt.error) {
-                lines.push(`Result: ERROR - ${attempt.error}`);
-            } else {
-                lines.push(`Result: NO MATCH`);
-            }
-        }
-        
-        return lines.join('\n');
-    }
 }
 
 // ===== Content Matching Implementation =====
@@ -656,97 +252,6 @@ class ContentMatcher {
         return validCandidates[0];
     }
 
-    
-    /**
-     * Find exact match with expanding search radius from hint
-     */
-    findExactMatchWithRadius(lines: string[], targetContent: string, startHint: number, maxRadius: number = -1): MatchResult | null {
-        const targetLines = targetContent.split('\n');
-        const maxSearchRadius = maxRadius < 0 ? lines.length : maxRadius;
-        
-        // First try at exact hint location
-        const hintMatch = this.findExactMatch(lines, targetContent, startHint);
-        if (hintMatch && hintMatch.startLine === startHint) {
-            return hintMatch;
-        }
-        
-        // Try expanding radius
-        for (let radius = 1; radius <= maxSearchRadius; radius++) {
-            // Try before hint
-            if (startHint - radius >= 0) {
-                const beforeMatch = this.findExactMatch(lines.slice(0, startHint), targetContent, Math.max(0, startHint - radius));
-                if (beforeMatch) {
-                    return beforeMatch;
-                }
-            }
-            
-            // Try after hint
-            if (startHint + radius < lines.length) {
-                const afterMatch = this.findExactMatch(lines, targetContent, startHint + radius);
-                if (afterMatch && afterMatch.startLine < startHint + radius + targetLines.length) {
-                    return afterMatch;
-                }
-            }
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Find all occurrences of content in the file
-     */
-    findAllMatches(lines: string[], targetContent: string): MatchResult[] {
-        const matches: MatchResult[] = [];
-        const targetLines = targetContent.split('\n');
-        
-        for (let i = 0; i <= lines.length - targetLines.length; i++) {
-            const match = this.findExactMatch(lines, targetContent, i);
-            if (match && match.startLine === i) {
-                matches.push(match);
-                // Skip past this match
-                i = match.endLine;
-            }
-        }
-        
-        return matches;
-    }
-    
-    /**
-     * Find best match considering line hints
-     */
-    findBestMatchWithHint(lines: string[], targetContent: string, startHint: number): MatchResult | null {
-        // Find all exact matches
-        const allMatches = this.findAllMatches(lines, targetContent);
-        
-        if (allMatches.length === 0) {
-            return null;
-        }
-        
-        if (allMatches.length === 1) {
-            return allMatches[0];
-        }
-        
-        // Multiple matches - choose closest to hint
-        let bestMatch = allMatches[0];
-        let bestDistance = Math.abs(allMatches[0].startLine - startHint);
-        
-        for (const match of allMatches) {
-            const distance = Math.abs(match.startLine - startHint);
-            if (distance < bestDistance) {
-                bestMatch = match;
-                bestDistance = distance;
-            }
-        }
-        
-        // Add warning about multiple matches
-        if (!bestMatch.issues) {
-            bestMatch.issues = [];
-        }
-        bestMatch.issues.push(`Found ${allMatches.length} identical matches. Using closest to line ${startHint}.`);
-        
-        return bestMatch;
-    }
-
     /**
      * Determine if a match requires user confirmation
      */
@@ -775,21 +280,23 @@ async function validateDiffSections(
     const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
     
     // Check if file exists
-    let fileExists = true;
-    let lines: string[] = [];
-    
     try {
         await vscode.workspace.fs.stat(fileUri);
-        // Read the file content
-        const document = await vscode.workspace.openTextDocument(fileUri);
-        for (let i = 0; i < document.lineCount; i++) {
-            lines.push(document.lineAt(i).text);
-        }
     } catch (error) {
-        // File doesn't exist - treat as empty file
-        fileExists = false;
-        lines = [];
-        console.log(`[validateDiffSections] File ${filePath} does not exist. Treating as empty file for validation.`);
+        return {
+            isValid: false,
+            matches: [],
+            conflicts: [],
+            warnings: [],
+            suggestions: [`File does not exist: ${filePath}. The apply_diff tool only works on existing files.`]
+        };
+    }
+
+    // Read the file content
+    const document = await vscode.workspace.openTextDocument(fileUri);
+    const lines = [];
+    for (let i = 0; i < document.lineCount; i++) {
+        lines.push(document.lineAt(i).text);
     }
 
     const matcher = new ContentMatcher();
@@ -801,76 +308,25 @@ async function validateDiffSections(
     // Sort diffs by line number for processing
     const sortedDiffs = [...diffs].sort((a, b) => a.startLine - b.startLine);
 
-    // Special handling for empty files (new or existing)
-    if (lines.length === 0) {
-        // For new files, we can only validate that diffs are for insertion at the beginning
-        const normalizedDiffs = normalizeDiffSections(sortedDiffs);
-        
-        let currentLine = 0;
-        for (let i = 0; i < normalizedDiffs.length; i++) {
-            const diff = normalizedDiffs[i];
-            
-            // For new files, if search content is empty or line hints are at 0, treat as insert
-            if (diff.search.trim() === '' || (diff.startLine === 0 && diff.endLine === 0)) {
-                // Calculate how many lines this diff will add
-                const linesToAdd = diff.replace.split('\n').length;
-                
-                matches.push({
-                    startLine: currentLine,
-                    endLine: currentLine,
-                    confidence: 1.0,
-                    strategy: 'new-file-insert',
-                    actualContent: '',
-                    issues: []
-                });
-                
-                // Move current line position for next diff
-                currentLine += linesToAdd;
-            } else {
-                conflicts.push({
-                    type: 'content_mismatch',
-                    diffIndex1: i,
-                    description: `Cannot find content in new file: ${diff.search.substring(0, 50)}...`,
-                    suggestion: 'For new files, use empty search content or set startLine/endLine to 0'
-                });
-            }
-        }
-        
-        const isValid = conflicts.length === 0;
-        return {
-            isValid,
-            matches,
-            conflicts,
-            warnings: lines.length === 0 ? ['Working with empty file'] : warnings,
-            suggestions
-        };
-    }
-    
-    // Normalize diffs to handle backward compatibility
-    const normalizedDiffs = normalizeDiffSections(sortedDiffs);
-    
-    // Create validation hierarchy
-    const validationHierarchy = new ValidationHierarchy();
-    
     // Validate each diff section
-    for (let i = 0; i < normalizedDiffs.length; i++) {
-        const diff = normalizedDiffs[i];
+    for (let i = 0; i < sortedDiffs.length; i++) {
+        const diff = sortedDiffs[i];
         console.log(`[validateDiffSections] Processing diff ${i}: lines ${diff.startLine}-${diff.endLine}`);
 
-        // Use hierarchical validation
-        const validationResult = await validationHierarchy.executeHierarchy(
-            matcher,
-            lines,
-            diff.search,
-            diff.startLine
-        );
+        // Try multiple matching strategies
+        let match = matcher.findExactMatch(lines, diff.originalContent, diff.startLine);
         
-        const match = validationResult.match;
-        
-        // Log validation attempts if no match found
         if (!match) {
-            console.log(`[validateDiffSections] No match found for diff ${i}`);
-            console.log(validationHierarchy.generateReport(validationResult.attempts));
+            match = matcher.findNormalizedMatch(lines, diff.originalContent, options);
+        }
+        
+        if (!match) {
+            match = matcher.findContextualMatch(lines, diff.originalContent);
+        }
+        
+        if (!match) {
+            const similarityMatches = matcher.findSimilarityMatch(lines, diff.originalContent, 0.7);
+            match = matcher.selectBestMatch(similarityMatches, 0.7);
         }
 
         if (match) {
@@ -897,46 +353,12 @@ async function validateDiffSections(
                 warnings.push(`Diff ${i} found with ${match.strategy} strategy (confidence: ${match.confidence.toFixed(2)})`);
             }
         } else {
-            // Collect diagnostic information
-            const diagnostic: DiagnosticInfo = {
-                expected: diff.search,
-                actualContent: [],
-                searchLocations: [],
-                attempts: validationResult.attempts
-            };
-            
-            // Find best partial matches for diagnostic
-            const partialMatches: MatchResult[] = [];
-            for (const attempt of validationResult.attempts) {
-                if (attempt.result && attempt.result.confidence > 0.5) {
-                    partialMatches.push(attempt.result);
-                }
-            }
-            
-            if (partialMatches.length > 0) {
-                const best = partialMatches[0];
-                diagnostic.bestMatch = {
-                    content: best.actualContent,
-                    location: best.startLine,
-                    confidence: best.confidence,
-                    strategy: best.strategy
-                };
-            }
-            
-            // Collect actual content at hint location
-            if (diff.startLine < lines.length) {
-                const endLine = Math.min(diff.endLine, lines.length - 1);
-                diagnostic.actualContent.push(lines.slice(diff.startLine, endLine + 1).join('\n'));
-                diagnostic.searchLocations.push(diff.startLine);
-            }
-            
             conflicts.push({
                 type: 'content_mismatch',
                 diffIndex1: i,
                 description: `Could not find content for diff section ${i}`,
-                suggestion: 'Check if the original content has been modified or update the diff section',
-                diagnostic // Store diagnostic for later use
-            } as ConflictInfo & { diagnostic: DiagnosticInfo });
+                suggestion: 'Check if the original content has been modified or update the diff section'
+            });
         }
     }
 
@@ -975,47 +397,25 @@ async function createModifiedContent(
 
     const workspaceFolder = vscode.workspace.workspaceFolders[0];
     const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
+    const document = await vscode.workspace.openTextDocument(fileUri);
     
     // Get all lines from the file
-    let lines: string[] = [];
-    try {
-        const document = await vscode.workspace.openTextDocument(fileUri);
-        for (let i = 0; i < document.lineCount; i++) {
-            lines.push(document.lineAt(i).text);
-        }
-    } catch (error) {
-        // File doesn't exist, start with empty content
-        console.log(`[createModifiedContent] File ${filePath} does not exist. Starting with empty content.`);
-        lines = [];
+    const lines = [];
+    for (let i = 0; i < document.lineCount; i++) {
+        lines.push(document.lineAt(i).text);
     }
-    
-    // Normalize diffs to handle backward compatibility
-    const normalizedDiffs = normalizeDiffSections(diffs);
 
     // Apply changes from bottom to top to avoid line number shifts
-    // Exception: for new file insertions, apply top to bottom
-    const hasNewFileInserts = matches.some(m => m.strategy === 'new-file-insert');
     const sortedChanges = matches
-        .map((match, index) => ({ match, diff: normalizedDiffs[index] }))
-        .sort((a, b) => hasNewFileInserts ? a.match.startLine - b.match.startLine : b.match.startLine - a.match.startLine);
+        .map((match, index) => ({ match, diff: diffs[index] }))
+        .sort((a, b) => b.match.startLine - a.match.startLine);
 
     for (const { match, diff } of sortedChanges) {
         console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
         
         // Replace the matched lines with new content
-        const newLines = diff.replace.split('\n');
-        
-        // Special handling for new file insertions
-        if (match.strategy === 'new-file-insert' && lines.length === 0) {
-            // For empty files, just set the lines directly
-            lines = newLines;
-        } else if (match.strategy === 'new-file-insert') {
-            // For subsequent insertions in new files, append
-            lines.push(...newLines);
-        } else {
-            // Normal replacement
-            lines.splice(match.startLine, match.endLine - match.startLine + 1, ...newLines);
-        }
+        const newLines = diff.newContent.split('\n');
+        lines.splice(match.startLine, match.endLine - match.startLine + 1, ...newLines);
     }
 
     return lines.join('\n');
@@ -1032,18 +432,6 @@ async function showDiffAndGetApproval(
     warnings: string[]
 ): Promise<boolean> {
     console.log(`[showDiffAndGetApproval] Showing diff for ${filePath}`);
-    
-    // Check if auto-approval is enabled
-    if (isAutoApprovalEnabled()) {
-        console.log(`[showDiffAndGetApproval] Auto-approval is enabled, automatically approving diff`);
-        vscode.window.showInformationMessage(`Auto-approved diff for ${filePath} (Auto-Approval Mode is ON)`);
-        return true;
-    }
-    
-    // Generate unique command IDs to avoid conflicts
-    const commandId = Date.now().toString();
-    const approveCommandId = `mcp.apply-diff.approve.${commandId}`;
-    const rejectCommandId = `mcp.apply-diff.reject.${commandId}`;
     
     if (!vscode.workspace.workspaceFolders) {
         throw new Error('No workspace folder is open');
@@ -1098,14 +486,14 @@ async function showDiffAndGetApproval(
         approveButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
         approveButton.text = '$(check) Apply Changes';
         approveButton.tooltip = 'Apply all proposed changes to the file';
-        approveButton.command = approveCommandId;
+        approveButton.command = 'mcp.apply-diff.approve';
         approveButton.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
         approveButton.show();
 
         rejectButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 999);
         rejectButton.text = '$(x) Reject Changes';
         rejectButton.tooltip = 'Reject changes and keep original file';
-        rejectButton.command = rejectCommandId;
+        rejectButton.command = 'mcp.apply-diff.reject';
         rejectButton.show();
 
         // Add info button showing file context
@@ -1136,16 +524,16 @@ async function showDiffAndGetApproval(
         const userChoice = await new Promise<boolean>((resolve) => {
             let resolved = false;
             
-            // Register approval command with unique ID
-            approveCommand = vscode.commands.registerCommand(approveCommandId, () => {
+            // Register approval command
+            approveCommand = vscode.commands.registerCommand('mcp.apply-diff.approve', () => {
                 if (!resolved) {
                     resolved = true;
                     resolve(true);
                 }
             });
             
-            // Register rejection command with unique ID
-            rejectCommand = vscode.commands.registerCommand(rejectCommandId, () => {
+            // Register rejection command
+            rejectCommand = vscode.commands.registerCommand('mcp.apply-diff.reject', () => {
                 if (!resolved) {
                     resolved = true;
                     resolve(false);
@@ -1261,27 +649,10 @@ async function applyDiffToFile(
 }
 
 /**
- * Main apply_diff function with improved progress feedback and file creation
+ * Main apply_diff function with improved progress feedback
  */
 export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
     console.log(`[applyDiff] Starting apply_diff for ${args.filePath} with ${args.diffs.length} diff sections`);
-    
-    if (!vscode.workspace.workspaceFolders) {
-        throw new Error('No workspace folder is open');
-    }
-
-    const workspaceFolder = vscode.workspace.workspaceFolders[0];
-    const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, args.filePath);
-    
-    // Check if file exists
-    let fileExists = false;
-    try {
-        await vscode.workspace.fs.stat(fileUri);
-        fileExists = true;
-    } catch (error) {
-        // File doesn't exist
-        console.log(`[applyDiff] File ${args.filePath} does not exist. Will create it.`);
-    }
     
     // Show progress during validation
     const progressOptions = {
@@ -1291,55 +662,25 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
     };
     
     return vscode.window.withProgress(progressOptions, async (progress) => {
-        // Create file if it doesn't exist
-        if (!fileExists) {
-            progress.report({ increment: 0, message: "Creating new file..." });
-            try {
-                await createWorkspaceFile(args.filePath, '', false, false);
-                console.log(`[applyDiff] Created new file: ${args.filePath}`);
-            } catch (error) {
-                console.error(`[applyDiff] Failed to create file: ${error}`);
-                throw new Error(`Failed to create file ${args.filePath}: ${error}`);
-            }
-        }
-        
-        progress.report({ increment: 10, message: "Validating diff sections..." });
+        progress.report({ increment: 0, message: "Validating diff sections..." });
         
         // Validate diff sections
         const validation = await validateDiffSections(args.filePath, args.diffs);
         progress.report({ increment: 30, message: "Validation complete" });
+        
         if (!validation.isValid) {
-            // Find the first conflict with diagnostic info
-            const conflictWithDiagnostic = validation.conflicts.find(c => 
-                (c as any).diagnostic !== undefined
-            ) as (ConflictInfo & { diagnostic: DiagnosticInfo }) | undefined;
-            
-            if (conflictWithDiagnostic?.diagnostic) {
-                const error = new ApplyDiffError(
-                    `Validation failed for ${args.filePath}`,
-                    conflictWithDiagnostic.diagnostic,
-                    ErrorLevel.DETAILED
-                );
-                throw new Error(error.format());
-            } else {
-                // Fallback to simple error
-                const errorMsg = `Validation failed for ${args.filePath}:\n` +
-                    `Conflicts: ${validation.conflicts.map(c => c.description).join(', ')}\n` +
-                    `Suggestions: ${validation.suggestions.join(', ')}`;
-                throw new Error(errorMsg);
-            }
+            const errorMsg = `Validation failed for ${args.filePath}:\\n` +
+                `Conflicts: ${validation.conflicts.map(c => c.description).join(', ')}\\n` +
+                `Suggestions: ${validation.suggestions.join(', ')}`;
+            throw new Error(errorMsg);
         }
         
         progress.report({ increment: 20, message: "Preparing changes..." });
         
         // Create modified content
-        let originalContent = '';
-        try {
-            originalContent = await vscode.workspace.openTextDocument(fileUri).then(doc => doc.getText());
-        } catch (error) {
-            // File might have just been created, so it's empty
-            originalContent = '';
-        }
+        const originalContent = await vscode.workspace.openTextDocument(
+            vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, args.filePath)
+        ).then(doc => doc.getText());
         
         const modifiedContent = await createModifiedContent(args.filePath, args.diffs, validation.matches);
         progress.report({ increment: 20, message: "Changes prepared" });
@@ -1602,15 +943,14 @@ export function registerEditTools(server: McpServer): void {
     // Add apply_diff tool
     server.tool(
         'apply_diff',
-        `Use this tool to apply multiple diff sections to a file with advanced fuzzy matching capabilities. This is the preferred tool for making complex changes to existing files.
+        `Use this tool to apply multiple diff sections to an existing file with advanced fuzzy matching capabilities. This is the preferred tool for making complex changes to existing files.
         
         Key Features:
         - Multiple diff sections in a single operation
-        - Automatic file creation if file doesn't exist
         - Fuzzy matching handles whitespace differences, content drift, and formatting variations
         - Shows unified diff preview before applying changes
         - Atomic all-or-nothing application
-        - Backward compatible with originalContent/newContent parameters
+        - Only works on existing files (validation enforced)
         
         Best Practices:
         - Use for related changes that should be applied together
@@ -1623,28 +963,17 @@ export function registerEditTools(server: McpServer): void {
         - Updating multiple import statements
         - Refactoring function signatures across a file
         - Adding multiple related code sections
-        - Creating new files with initial content
         `,
         {
-            filePath: z.string().describe('Path to the file to modify or create'),
-            description: z.string().optional().describe('Overall description of the changes'),
+            filePath: z.string().describe('Path to the existing file to modify'),
             diffs: z.array(z.object({
                 startLine: z.number().describe('Starting line number (0-based, hint for search)'),
                 endLine: z.number().describe('Ending line number (0-based, hint for search)'),
-                search: z.string().optional().describe('Content to search for (formerly originalContent)'),
-                replace: z.string().optional().describe('Content to replace with (formerly newContent)'),
-                description: z.string().optional().describe('Description of this change section'),
-                // Backward compatibility
-                originalContent: z.string().optional().describe('Deprecated: Use search instead'),
-                newContent: z.string().optional().describe('Deprecated: Use replace instead')
-            }).refine(data => {
-                // Ensure either search or originalContent is provided (allowing empty string for new files)
-                const hasSearch = data.search !== undefined || data.originalContent !== undefined;
-                const hasReplace = data.replace !== undefined || data.newContent !== undefined;
-                return hasSearch && hasReplace;
-            }, {
-                message: "Either 'search' or 'originalContent' must be provided, and either 'replace' or 'newContent' must be provided"
-            })).describe('Array of diff sections to apply')
+                originalContent: z.string().describe('Original content to find and replace'),
+                newContent: z.string().describe('New content to replace with'),
+                description: z.string().optional().describe('Description of this change section')
+            })).describe('Array of diff sections to apply'),
+            description: z.string().optional().describe('Overall description of the changes')
         },
         async ({ filePath, diffs, description }): Promise<CallToolResult> => {
             console.log(`[apply_diff] Tool called with filePath=${filePath}, ${diffs.length} diff sections`);

@@ -1,0 +1,476 @@
+
+> vscode-mcp-server@0.0.4 pretest
+> npm run compile && npm run lint
+
+
+> vscode-mcp-server@0.0.4 compile
+> tsc -p ./
+
+
+> vscode-mcp-server@0.0.4 lint
+> eslint src
+
+
+C:\Users\plafayette\workspace\github_projects\vscode-mcp-server\src\extension.ts
+  226:21  warning  Expected { after 'if' condition  curly
+
+C:\Users\plafayette\workspace\github_projects\vscode-mcp-server\src\test\content-matcher.test.ts
+  117:30  warning  Expected { after 'if' condition  curly
+  122:38  warning  Expected { after 'if' condition  curly
+  158:38  warning  Expected { after 'if' condition  curly
+  161:43  warning  Expected { after 'if' condition  curly
+
+C:\Users\plafayette\workspace\github_projects\vscode-mcp-server\src\tools\edit-tools.ts
+  592:30  warning  Expected { after 'if' condition  curly
+  648:38  warning  Expected { after 'if' condition  curly
+  651:43  warning  Expected { after 'if' condition  curly
+
+Γ£û 8 problems (0 errors, 8 warnings)
+  0 errors and 8 warnings potentially fixable with the `--fix` option.
+
+
+> vscode-mcp-server@0.0.4 test
+> vscode-test
+
+- Resolving version...
+Γ£ö Validated version: 1.100.2
+Γ£ö Found existing install in C:\Users\plafayette\workspace\github_projects\vscode-mcp-server\.vscode-test\vscode-win32-x64-archive-1.100.2
+
+[main 2025-05-29T19:15:27.262Z] update#setState disabled
+[main 2025-05-29T19:15:27.263Z] update#ctor - updates are disabled by the environment
+[main 2025-05-29T19:15:27.290Z] Error: Error mutex already exists
+    at Fu.S (file:///C:/Users/plafayette/workspace/github_projects/vscode-mcp-server/.vscode-test/vscode-win32-x64-archive-1.100.2/resources/app/out/main.js:125:18317)
+ComputeTargetPlatform: win32-x64
+Started local extension host with pid 22480.
+Loading development extension at c:\Users\plafayette\workspace\github_projects\vscode-mcp-server
+ChatSessionStore: Migrating 0 chat sessions from storage service to file system
+Settings Sync: Account status changed from uninitialized to unavailable
+
+  Extension Test Suite
+    1) Extension should read port from configuration
+    2) Status bar item should be created with proper attributes
+    Γ£ö Server info command should be registered
+    3) Configuration change listener should be registered
+    4) Deactivate should clean up resources
+  ContentMatcher Test Suite
+    Exact Match Tests
+      Γ£ö Should find exact match at beginning of file
+      Γ£ö Should find exact match in middle of file
+      Γ£ö Should return null when no exact match found
+      Γ£ö Should use start hint to optimize search
+    Normalized Match Tests
+      Γ£ö Should find match ignoring leading whitespace
+      Γ£ö Should find match ignoring trailing whitespace
+      Γ£ö Should handle tab to space conversion
+      Γ£ö Should respect case sensitivity option
+    Similarity Match Tests
+      Γ£ö Should find similar content above threshold
+      Γ£ö Should sort results by confidence
+      Γ£ö Should return empty array when no matches above threshold
+    Best Match Selection Tests
+      Γ£ö Should select match with highest confidence
+      Γ£ö Should return null when no candidates meet minimum confidence
+      Γ£ö Should return null for empty candidates array
+    User Confirmation Requirements
+      Γ£ö Should require confirmation for low confidence matches
+      Γ£ö Should require confirmation when issues are present
+      Γ£ö Should not require confirmation for high confidence, no issues
+  Apply Diff Integration Tests
+    File Validation Tests
+      Γ£ö Should fail validation when file does not exist
+      Γ£ö Should validate file exists before processing
+    Single Diff Application Tests
+      Γ£ö Should apply single diff section successfully
+      Γ£ö Should handle exact content matching
+    Multiple Diff Application Tests
+      Γ£ö Should apply multiple non-overlapping diffs
+      Γ£ö Should detect and prevent overlapping diffs
+    Fuzzy Matching Tests
+      Γ£ö Should handle whitespace differences
+      Γ£ö Should handle content drift (line number changes)
+      Γ£ö Should provide confidence scores for fuzzy matches
+    Error Handling Tests
+      Γ£ö Should gracefully handle content not found
+      Γ£ö Should handle empty files
+      Γ£ö Should validate line range boundaries
+    User Interaction Tests
+      Γ£ö Should present diff for user approval
+      Γ£ö Should handle user rejection of changes
+    Performance Tests
+      Γ£ö Should handle large files efficiently
+      Γ£ö Should handle many diff sections efficiently
+    Unicode and Special Character Tests
+      Γ£ö Should handle Unicode content correctly
+      Γ£ö Should handle special characters and escape sequences
+  Apply Diff Functional Tests
+    Backward Compatibility Tests
+[apply_diff] Tool called with filePath=backward-compat.ts, 1 diff sections
+[applyDiff] Starting apply_diff for backward-compat.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[apply_diff] Deprecation warning: 'originalContent' parameter in diff[0] is deprecated. Use 'search' instead.
+[apply_diff] Deprecation warning: 'newContent' parameter in diff[0] is deprecated. Use 'replace' instead.
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[createModifiedContent] Creating modified content with 1 diff sections
+[apply_diff] Deprecation warning: 'originalContent' parameter in diff[0] is deprecated. Use 'search' instead.
+[apply_diff] Deprecation warning: 'newContent' parameter in diff[0] is deprecated. Use 'replace' instead.
+[createModifiedContent] Applying change at lines 0-0
+[showDiffAndGetApproval] Showing diff for backward-compat.ts
+      5) Should work with originalContent/newContent parameters
+[apply_diff] Tool called with filePath=deprecation-test.ts, 1 diff sections
+[applyDiff] Starting apply_diff for deprecation-test.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[apply_diff] Deprecation warning: 'originalContent' parameter in diff[0] is deprecated. Use 'search' instead.
+[apply_diff] Deprecation warning: 'newContent' parameter in diff[0] is deprecated. Use 'replace' instead.
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[createModifiedContent] Creating modified content with 1 diff sections
+[apply_diff] Deprecation warning: 'originalContent' parameter in diff[0] is deprecated. Use 'search' instead.
+[apply_diff] Deprecation warning: 'newContent' parameter in diff[0] is deprecated. Use 'replace' instead.
+[createModifiedContent] Applying change at lines 0-0
+[showDiffAndGetApproval] Showing diff for deprecation-test.ts
+      6) Should show deprecation warning for old parameters
+    New Parameter Tests
+[apply_diff] Tool called with filePath=new-params.ts, 1 diff sections
+[applyDiff] Starting apply_diff for new-params.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[createModifiedContent] Creating modified content with 1 diff sections
+[createModifiedContent] Applying change at lines 0-0
+[showDiffAndGetApproval] Showing diff for new-params.ts
+      7) Should work with search/replace parameters
+[apply_diff] Tool called with filePath=mixed-params.ts, 2 diff sections
+[applyDiff] Starting apply_diff for mixed-params.ts with 2 diff sections
+[validateDiffSections] Starting validation for 2 diff sections
+[apply_diff] Deprecation warning: 'originalContent' parameter in diff[1] is deprecated. Use 'search' instead.
+[apply_diff] Deprecation warning: 'newContent' parameter in diff[1] is deprecated. Use 'replace' instead.
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[validateDiffSections] Processing diff 1: lines 1-1
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[createModifiedContent] Creating modified content with 2 diff sections
+[apply_diff] Deprecation warning: 'originalContent' parameter in diff[1] is deprecated. Use 'search' instead.
+[apply_diff] Deprecation warning: 'newContent' parameter in diff[1] is deprecated. Use 'replace' instead.
+[createModifiedContent] Applying change at lines 1-1
+[createModifiedContent] Applying change at lines 0-0
+[showDiffAndGetApproval] Showing diff for mixed-params.ts
+      8) Should work with mixed old and new parameters
+    File Creation Tests
+[apply_diff] Tool called with filePath=new-file.ts, 1 diff sections
+[applyDiff] Starting apply_diff for new-file.ts with 1 diff sections
+[applyDiff] File new-file.ts does not exist. Will create it.
+[createWorkspaceFile] Starting with path: new-file.ts, overwrite: false, ignoreIfExists: false
+[createWorkspaceFile] File URI: c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\temp-workspace\new-file.ts
+[createWorkspaceFile] File created successfully: c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\temp-workspace\new-file.ts
+[createWorkspaceFile] File opened in editor
+[applyDiff] Created new file: new-file.ts
+[validateDiffSections] Starting validation for 1 diff sections
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[createModifiedContent] Creating modified content with 1 diff sections
+[createModifiedContent] Applying change at lines 0-0
+[showDiffAndGetApproval] Showing diff for new-file.ts
+      9) Should create file if it does not exist
+[apply_diff] Tool called with filePath=multi-diff-new.ts, 2 diff sections
+[applyDiff] Starting apply_diff for multi-diff-new.ts with 2 diff sections
+[applyDiff] File multi-diff-new.ts does not exist. Will create it.
+[createWorkspaceFile] Starting with path: multi-diff-new.ts, overwrite: false, ignoreIfExists: false
+[createWorkspaceFile] File URI: c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\temp-workspace\multi-diff-new.ts
+[createWorkspaceFile] File created successfully: c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\temp-workspace\multi-diff-new.ts
+[createWorkspaceFile] File opened in editor
+[applyDiff] Created new file: multi-diff-new.ts
+[validateDiffSections] Starting validation for 2 diff sections
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[validateDiffSections] Processing diff 1: lines 1-1
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match-near-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-near-hint (confidence: 1)
+[apply_diff] Error in tool: Error: Validation failed for multi-diff-new.ts:
+Conflicts: Diff sections 0 and 1 have overlapping line ranges
+Suggestions: Fix all conflicts before applying the diff
+	at c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:1052:23
+      10) Should handle multiple diffs when creating new file
+    Hierarchical Validation Tests
+[apply_diff] Tool called with filePath=whitespace-test.ts, 1 diff sections
+[applyDiff] Starting apply_diff for whitespace-test.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[validateDiffSections] Processing diff 0: lines 0-2
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match-near-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match (level 1)
+[ValidationHierarchy] Trying strategy: normalized-whitespace (level 2)
+[ValidationHierarchy] Match found with normalized-whitespace (confidence: 0.9)
+[createModifiedContent] Creating modified content with 1 diff sections
+[createModifiedContent] Applying change at lines 0-2
+[showDiffAndGetApproval] Showing diff for whitespace-test.ts
+      11) Should match content with whitespace differences
+[apply_diff] Tool called with filePath=case-test.ts, 1 diff sections
+[applyDiff] Starting apply_diff for case-test.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match-near-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match (level 1)
+[ValidationHierarchy] Trying strategy: normalized-whitespace (level 2)
+[ValidationHierarchy] Trying strategy: case-insensitive (level 2)
+[ValidationHierarchy] Match found with case-insensitive (confidence: 0.9)
+[createModifiedContent] Creating modified content with 1 diff sections
+[createModifiedContent] Applying change at lines 0-0
+[showDiffAndGetApproval] Showing diff for case-test.ts
+      12) Should match content with case differences
+[apply_diff] Tool called with filePath=line-hint-test.ts, 1 diff sections
+[applyDiff] Starting apply_diff for line-hint-test.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[validateDiffSections] Processing diff 0: lines 50-50
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Match found with exact-match-at-hint (confidence: 1)
+[createModifiedContent] Creating modified content with 1 diff sections
+[createModifiedContent] Applying change at lines 50-50
+[showDiffAndGetApproval] Showing diff for line-hint-test.ts
+      13) Should use line hints for faster matching
+    Error Handling Tests
+[apply_diff] Tool called with filePath=error-test.ts, 1 diff sections
+[applyDiff] Starting apply_diff for error-test.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[apply_diff] Error in tool: Error: Diff section 0 missing required 'search' parameter
+	at c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:145:19
+	at Array.map (<anonymous>)
+	at normalizeDiffSections (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:132:18)
+	at validateDiffSections (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:680:29)
+	at async c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:1038:28
+      14) Should fail when neither search/originalContent nor replace/newContent provided
+[apply_diff] Tool called with filePath=not-found-test.ts, 1 diff sections
+[applyDiff] Starting apply_diff for not-found-test.ts with 1 diff sections
+[validateDiffSections] Starting validation for 1 diff sections
+[validateDiffSections] Processing diff 0: lines 0-0
+[ValidationHierarchy] Trying strategy: exact-match-at-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match-near-hint (level 1)
+[ValidationHierarchy] Trying strategy: exact-match (level 1)
+[ValidationHierarchy] Trying strategy: normalized-whitespace (level 2)
+[ValidationHierarchy] Trying strategy: case-insensitive (level 2)
+[ValidationHierarchy] Trying strategy: similarity-high (level 3)
+[ValidationHierarchy] Trying strategy: similarity-medium (level 3)
+[ValidationHierarchy] Trying strategy: similarity-low (level 3)
+[ValidationHierarchy] Trying strategy: contextual (level 3)
+[validateDiffSections] No match found for diff 0
+Validation Hierarchy Report:
+==================================================
+
+Strategy: exact-match-at-hint (Level 1)
+Description: Exact match at hinted line location
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: exact-match-near-hint (Level 1)
+Description: Exact match near hinted line (┬▒5 lines)
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: exact-match (Level 1)
+Description: Character-for-character exact matching including whitespace
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: normalized-whitespace (Level 2)
+Description: Whitespace-normalized matching (ignores leading/trailing whitespace)
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: case-insensitive (Level 2)
+Description: Case-insensitive matching
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: similarity-high (Level 3)
+Description: High-confidence similarity matching (90%+)
+Duration: 1ms
+Result: NO MATCH
+
+Strategy: similarity-medium (Level 3)
+Description: Medium-confidence similarity matching (80%+)
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: similarity-low (Level 3)
+Description: Low-confidence similarity matching (70%+)
+Duration: 0ms
+Result: NO MATCH
+
+Strategy: contextual (Level 3)
+Description: Contextual matching using surrounding code
+Duration: 0ms
+Result: NO MATCH
+[apply_diff] Error in tool: Error: Error: Validation failed for not-found-test.ts
+============================================================
+
+Expected (search content):
+```
+content that does not exist
+```
+
+Suggestions:
+- Check if the code has been modified
+- Try using a smaller search pattern
+- Verify the line numbers are correct
+	at c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:1045:23
+      15) Should provide detailed error when content not found
+  36 passing (16s)
+  15 failing
+  1) Extension Test Suite
+       Extension should read port from configuration:
+
+      AssertionError [ERR_ASSERTION]: MCPServer not created with configured port
+
+false !== true
+
+      + expected - actual
+
+      -false
+      +true
+      
+  	at Context.<anonymous> (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\extension.test.js:104:16)
+
+  2) Extension Test Suite
+       Status bar item should be created with proper attributes:
+
+      AssertionError [ERR_ASSERTION]: Status bar command not set correctly
++ actual - expected
+
++ 'vscode-mcp-server.toggleServer'
+- 'vscode-mcp-server.showServerInfo'
+                     ^
+      + expected - actual
+
+      -vscode-mcp-server.toggleServer
+      +vscode-mcp-server.showServerInfo
+      
+  	at Context.<anonymous> (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\extension.test.js:112:16)
+
+  3) Extension Test Suite
+       Configuration change listener should be registered:
+
+      AssertionError [ERR_ASSERTION]: Configuration change listener not registered
+
+false !== true
+
+      + expected - actual
+
+      -false
+      +true
+      
+  	at Context.<anonymous> (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\extension.test.js:128:16)
+
+  4) Extension Test Suite
+       Deactivate should clean up resources:
+
+      AssertionError [ERR_ASSERTION]: Server not stopped during deactivation
+
+false !== true
+
+      + expected - actual
+
+      -false
+      +true
+      
+  	at Context.<anonymous> (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\extension.test.js:138:16)
+
+  5) Apply Diff Functional Tests
+       Backward Compatibility Tests
+         Should work with originalContent/newContent parameters:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  6) Apply Diff Functional Tests
+       Backward Compatibility Tests
+         Should show deprecation warning for old parameters:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  7) Apply Diff Functional Tests
+       New Parameter Tests
+         Should work with search/replace parameters:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  8) Apply Diff Functional Tests
+       New Parameter Tests
+         Should work with mixed old and new parameters:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  9) Apply Diff Functional Tests
+       File Creation Tests
+         Should create file if it does not exist:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  10) Apply Diff Functional Tests
+       File Creation Tests
+         Should handle multiple diffs when creating new file:
+     Error: Validation failed for multi-diff-new.ts:
+Conflicts: Diff sections 0 and 1 have overlapping line ranges
+Suggestions: Fix all conflicts before applying the diff
+  	at c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\tools\edit-tools.js:1052:23
+
+  11) Apply Diff Functional Tests
+       Hierarchical Validation Tests
+         Should match content with whitespace differences:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  12) Apply Diff Functional Tests
+       Hierarchical Validation Tests
+         Should match content with case differences:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  13) Apply Diff Functional Tests
+       Hierarchical Validation Tests
+         Should use line hints for faster matching:
+     Error: Timeout of 2000ms exceeded. For async tests and hooks, ensure "done()" is called; if returning a Promise, ensure it resolves. (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js)
+  	at listOnTimeout (node:internal/timers:581:17)
+  	at process.processTimers (node:internal/timers:519:7)
+
+  14) Apply Diff Functional Tests
+       Error Handling Tests
+         Should fail when neither search/originalContent nor replace/newContent provided:
+
+      AssertionError [ERR_ASSERTION]: Should indicate missing parameters
+      + expected - actual
+
+      -false
+      +true
+      
+  	at Context.<anonymous> (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js:310:24)
+
+  15) Apply Diff Functional Tests
+       Error Handling Tests
+         Should provide detailed error when content not found:
+
+      AssertionError [ERR_ASSERTION]: Should indicate content not found
+      + expected - actual
+
+      -false
+      +true
+      
+  	at Context.<anonymous> (c:\Users\plafayette\workspace\github_projects\vscode-mcp-server\out\test\apply-diff-functional.test.js:330:24)
+
+15 tests failed.
+[main 2025-05-29T19:15:44.963Z] Extension host with pid 22480 exited with code: 0, signal: unknown.
+Exit code:   1

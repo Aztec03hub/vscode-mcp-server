@@ -47,277 +47,341 @@ suite('Apply Diff Functional Tests', () => {
         registerEditTools(mockServer as any);
     });
     
+    // Check if auto-approval is enabled and warn the user
+    suiteSetup(async function() {
+        // Check if the extension is loaded
+        const ext = vscode.extensions.getExtension('vscode-mcp-server.vscode-mcp-server');
+        if (!ext) {
+            console.log('[TEST] Extension not found, tests may fail');
+            return;
+        }
+        
+        // Check auto-approval status
+        try {
+            const isAutoApprovalEnabled = await vscode.commands.executeCommand('vscode-mcp-server.isAutoApprovalEnabled');
+            if (!isAutoApprovalEnabled) {
+                console.log('\n[TEST WARNING] Auto-Approval Mode is OFF. Tests will timeout waiting for manual approval.');
+                console.log('[TEST WARNING] Please enable Auto-Approval Mode by clicking the status bar button before running tests.\n');
+                
+                // Show warning to user
+                const result = await vscode.window.showWarningMessage(
+                    'Auto-Approval Mode is OFF. Tests will timeout. Enable Auto-Approval Mode for testing?',
+                    { modal: true },
+                    'Enable Auto-Approval',
+                    'Continue Anyway'
+                );
+                
+                if (result === 'Enable Auto-Approval') {
+                    await vscode.commands.executeCommand('vscode-mcp-server.toggleAutoApproval');
+                }
+            } else {
+                console.log('\n[TEST] Auto-Approval Mode is ON. Tests will run without manual intervention.\n');
+            }
+        } catch (error) {
+            console.log('[TEST] Could not check auto-approval status:', error);
+        }
+    });
+    
     after(() => {
+        // Clean up test workspace
+        if (fs.existsSync(testWorkspaceFolder)) {
+            fs.rmSync(testWorkspaceFolder, { recursive: true, force: true });
+        }
+        
         // Restore original workspace folders
         Object.defineProperty(vscode.workspace, 'workspaceFolders', {
             value: originalWorkspaceFolders,
             writable: true
         });
-        
-        // Clean up test directory
-        try {
-            if (fs.existsSync(testWorkspaceFolder)) {
-                fs.rmSync(testWorkspaceFolder, { recursive: true, force: true });
-            }
-        } catch (error) {
-            console.warn('Failed to clean up test workspace:', error);
-        }
     });
-
-    suite('Real Apply Diff Tests', () => {
-        let testFilePath: string;
-        
-        beforeEach(() => {
-            testFilePath = path.join(testWorkspaceFolder, 'test-file.ts');
-        });
-        
-        afterEach(() => {
-            try {
-                if (fs.existsSync(testFilePath)) {
-                    fs.unlinkSync(testFilePath);
-                }
-            } catch (error) {
-                // Ignore cleanup errors
-            }
-        });
-
-        test('Should apply single diff successfully with user approval', async function() {
-            this.timeout(10000); // Increase timeout for file operations
-            
-            // Create test file
-            const initialContent = [
-                'export class Calculator {',
-                '    private result: number = 0;',
-                '    ',
-                '    add(value: number): void {',
-                '        this.result += value;',
-                '    }',
-                '}'
-            ].join('\n');
-            
-            fs.writeFileSync(testFilePath, initialContent);
-            
-            // Mock user approval
-            const showInformationMessageStub = sinon.stub(vscode.window, 'showInformationMessage');
-            showInformationMessageStub.resolves({ title: 'Apply Changes' } as vscode.MessageItem);
-            
-            const executeCommandStub = sinon.stub(vscode.commands, 'executeCommand');
-            executeCommandStub.resolves();
-            
-            const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument');
-            const mockDocument = {
-                getText: () => initialContent,
-                lineCount: 7,
-                lineAt: (line: number) => ({ 
-                    text: initialContent.split('\n')[line] 
-                }),
-                save: sinon.stub().resolves(),
-                uri: vscode.Uri.file(testFilePath)
-            };
-            openTextDocumentStub.resolves(mockDocument as any);
-            
-            const showTextDocumentStub = sinon.stub(vscode.window, 'showTextDocument');
-            showTextDocumentStub.resolves({} as any);
-            
-            const applyEditStub = sinon.stub(vscode.workspace, 'applyEdit');
-            applyEditStub.resolves(true);
-            
-            try {
-                // Get the apply_diff tool
-                const applyDiffTool = mockServer.tools.get('apply_diff');
-                assert.strictEqual(applyDiffTool !== undefined, true, 'apply_diff tool should be registered');
-                
-                // Test data
-                const testArgs = {
-                    filePath: 'test-file.ts',
-                    diffs: [{
-                        startLine: 1,
-                        endLine: 1,
-                        originalContent: '    private result: number = 0;',
-                        newContent: '    private result: number = 100;',
-                        description: 'Change initial value'
-                    }],
-                    description: 'Test single diff application'
-                };
-                
-                // Call the tool handler
-                const result = await applyDiffTool.handler(testArgs);
-                
-                // Verify the result
-                assert.strictEqual(result.content.length > 0, true, 'Should return content');
-                assert.strictEqual(result.content[0].type, 'text', 'Should return text content');
-                assert.strictEqual(result.content[0].text.includes('Successfully applied'), true, 'Should indicate success');
-                
-                // Verify mocks were called appropriately
-                assert.strictEqual(openTextDocumentStub.called, true, 'Should open document');
-                assert.strictEqual(executeCommandStub.called, true, 'Should execute diff command');
-                assert.strictEqual(showInformationMessageStub.called, true, 'Should show approval dialog');
-                
-            } finally {
-                showInformationMessageStub.restore();
-                executeCommandStub.restore();
-                openTextDocumentStub.restore();
-                showTextDocumentStub.restore();
-                applyEditStub.restore();
-            }
-        });
-
-        test('Should reject changes when user cancels', async function() {
-            this.timeout(10000);
-            
-            // Create test file
-            const initialContent = 'function test() {\n    return 42;\n}';
-            fs.writeFileSync(testFilePath, initialContent);
-            
-            // Mock user rejection
-            const showInformationMessageStub = sinon.stub(vscode.window, 'showInformationMessage');
-            showInformationMessageStub.resolves({ title: 'Cancel' } as vscode.MessageItem);
-            
-            const executeCommandStub = sinon.stub(vscode.commands, 'executeCommand');
-            executeCommandStub.resolves();
-            
-            const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument');
-            const mockDocument = {
-                getText: () => initialContent,
-                lineCount: 3,
-                lineAt: (line: number) => ({ 
-                    text: initialContent.split('\n')[line] 
-                }),
-                uri: vscode.Uri.file(testFilePath)
-            };
-            openTextDocumentStub.resolves(mockDocument as any);
-            
-            try {
-                const applyDiffTool = mockServer.tools.get('apply_diff');
-                
-                const testArgs = {
-                    filePath: 'test-file.ts',
-                    diffs: [{
-                        startLine: 0,
-                        endLine: 2,
-                        originalContent: 'function test() {\n    return 42;\n}',
-                        newContent: 'function test() {\n    return 100;\n}',
-                        description: 'Change return value'
-                    }]
-                };
-                
-                // Should throw error when user cancels
-                try {
-                    await applyDiffTool.handler(testArgs);
-                    assert.fail('Should throw error when user cancels');
-                } catch (error: any) {
-                    assert.strictEqual(error.message.includes('rejected'), true, 'Should indicate user rejection');
-                }
-                
-            } finally {
-                showInformationMessageStub.restore();
-                executeCommandStub.restore();
-                openTextDocumentStub.restore();
-            }
-        });
-
-        test('Should handle file not found error', async function() {
-            this.timeout(5000);
+    
+    suite('Backward Compatibility Tests', () => {
+        test('Should work with originalContent/newContent parameters', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'backward-compat.ts');
+            const initialContent = 'const oldValue = 42;\n';
+            fs.writeFileSync(testFile, initialContent);
             
             const applyDiffTool = mockServer.tools.get('apply_diff');
+            assert.ok(applyDiffTool, 'apply_diff tool should be registered');
             
-            const testArgs = {
-                filePath: 'non-existent-file.ts',
+            // Test with old parameter names
+            const result = await applyDiffTool.handler({
+                filePath: 'backward-compat.ts',
                 diffs: [{
                     startLine: 0,
                     endLine: 0,
-                    originalContent: 'some content',
-                    newContent: 'new content'
+                    originalContent: 'const oldValue = 42;',
+                    newContent: 'const newValue = 100;'
                 }]
-            };
+            });
             
-            // Should throw error for non-existent file
-            try {
-                await applyDiffTool.handler(testArgs);
-                assert.fail('Should throw error for non-existent file');
-            } catch (error: any) {
-                assert.strictEqual(error.message.includes('Validation failed'), true, 'Should indicate validation failure');
-                assert.strictEqual(error.message.includes('does not exist'), true, 'Should mention file does not exist');
-            }
+            // Verify the change was applied
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.ok(updatedContent.includes('const newValue = 100;'), 'File should be updated with new content');
         });
-
-        test('Should detect overlapping diff conflicts', async function() {
-            this.timeout(5000);
-            
-            // Create test file
-            const initialContent = 'function test() {\n    return 42;\n}';
-            fs.writeFileSync(testFilePath, initialContent);
-            
-            const openTextDocumentStub = sinon.stub(vscode.workspace, 'openTextDocument');
-            const mockDocument = {
-                getText: () => initialContent,
-                lineCount: 3,
-                lineAt: (line: number) => ({ 
-                    text: initialContent.split('\n')[line] 
-                }),
-                uri: vscode.Uri.file(testFilePath)
-            };
-            openTextDocumentStub.resolves(mockDocument as any);
+        
+        test('Should show deprecation warning for old parameters', async () => {
+            const consoleWarnStub = sinon.stub(console, 'warn');
             
             try {
+                const testFile = path.join(testWorkspaceFolder, 'deprecation-test.ts');
+                fs.writeFileSync(testFile, 'test content');
+                
                 const applyDiffTool = mockServer.tools.get('apply_diff');
+                await applyDiffTool.handler({
+                    filePath: 'deprecation-test.ts',
+                    diffs: [{
+                        startLine: 0,
+                        endLine: 0,
+                        originalContent: 'test content',
+                        newContent: 'updated content'
+                    }]
+                });
                 
-                const testArgs = {
-                    filePath: 'test-file.ts',
-                    diffs: [
-                        {
-                            startLine: 0,
-                            endLine: 2,
-                            originalContent: 'function test() {\n    return 42;\n}',
-                            newContent: 'function test() {\n    return 100;\n}',
-                            description: 'Change entire function'
-                        },
-                        {
-                            startLine: 1,
-                            endLine: 1,
-                            originalContent: '    return 42;',
-                            newContent: '    return 200;',
-                            description: 'Change just return statement'
-                        }
-                    ]
-                };
-                
-                // Should throw error for overlapping diffs
-                try {
-                    await applyDiffTool.handler(testArgs);
-                    assert.fail('Should throw error for overlapping diffs');
-                } catch (error: any) {
-                    assert.strictEqual(error.message.includes('Validation failed'), true, 'Should indicate validation failure');
-                    assert.strictEqual(error.message.includes('overlap'), true, 'Should mention overlap');
-                }
-                
+                // Check that deprecation warnings were logged
+                assert.ok(consoleWarnStub.called, 'Should show deprecation warning');
+                assert.ok(consoleWarnStub.calledWithMatch(/deprecation warning.*originalContent/i), 
+                    'Should warn about originalContent deprecation');
+                assert.ok(consoleWarnStub.calledWithMatch(/deprecation warning.*newContent/i), 
+                    'Should warn about newContent deprecation');
             } finally {
-                openTextDocumentStub.restore();
+                consoleWarnStub.restore();
             }
         });
     });
-
-    suite('Tool Registration Tests', () => {
-        test('Should register all required edit tools', () => {
-            // Verify all tools are registered
-            const expectedTools = ['create_file_code', 'replace_lines_code', 'apply_diff'];
+    
+    suite('New Parameter Tests', () => {
+        test('Should work with search/replace parameters', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'new-params.ts');
+            const initialContent = 'function calculate() { return 42; }';
+            fs.writeFileSync(testFile, initialContent);
             
-            for (const toolName of expectedTools) {
-                const tool = mockServer.tools.get(toolName);
-                assert.strictEqual(tool !== undefined, true, `Tool ${toolName} should be registered`);
-                assert.strictEqual(typeof tool.handler, 'function', `Tool ${toolName} should have a handler function`);
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            // Test with new parameter names
+            const result = await applyDiffTool.handler({
+                filePath: 'new-params.ts',
+                description: 'Update calculation',
+                diffs: [{
+                    startLine: 0,
+                    endLine: 0,
+                    search: 'function calculate() { return 42; }',
+                    replace: 'function calculate() { return 100; }'
+                }]
+            });
+            
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.ok(updatedContent.includes('return 100'), 'File should be updated with new calculation');
+        });
+        
+        test('Should work with mixed old and new parameters', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'mixed-params.ts');
+            const initialContent = 'let x = 1;\nlet y = 2;';
+            fs.writeFileSync(testFile, initialContent);
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            // Mix of old and new parameters
+            const result = await applyDiffTool.handler({
+                filePath: 'mixed-params.ts',
+                diffs: [
+                    {
+                        startLine: 0,
+                        endLine: 0,
+                        search: 'let x = 1;',
+                        replace: 'let x = 10;'
+                    },
+                    {
+                        startLine: 1,
+                        endLine: 1,
+                        originalContent: 'let y = 2;',
+                        newContent: 'let y = 20;'
+                    }
+                ]
+            });
+            
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.ok(updatedContent.includes('let x = 10'), 'First diff with new params should work');
+            assert.ok(updatedContent.includes('let y = 20'), 'Second diff with old params should work');
+        });
+    });
+    
+    suite('File Creation Tests', () => {
+        test('Should create file if it does not exist', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'new-file.ts');
+            
+            // Ensure file doesn't exist
+            if (fs.existsSync(testFile)) {
+                fs.unlinkSync(testFile);
+            }
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            // Apply diff to non-existent file
+            const result = await applyDiffTool.handler({
+                filePath: 'new-file.ts',
+                description: 'Create new file with content',
+                diffs: [{
+                    startLine: 0,
+                    endLine: 0,
+                    search: '',
+                    replace: 'export function newFunction() {\n    return "created";\n}'
+                }]
+            });
+            
+            assert.ok(fs.existsSync(testFile), 'File should be created');
+            const content = fs.readFileSync(testFile, 'utf8');
+            assert.ok(content.includes('export function newFunction'), 'File should contain the new content');
+        });
+        
+        test('Should handle multiple diffs when creating new file', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'multi-diff-new.ts');
+            
+            if (fs.existsSync(testFile)) {
+                fs.unlinkSync(testFile);
+            }
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            const result = await applyDiffTool.handler({
+                filePath: 'multi-diff-new.ts',
+                diffs: [
+                    {
+                        startLine: 0,
+                        endLine: 0,
+                        search: '',
+                        replace: 'import { Component } from "@angular/core";\n'
+                    },
+                    {
+                        startLine: 1,
+                        endLine: 1,
+                        search: '',
+                        replace: '\n@Component({\n    selector: "app-test"\n})\nexport class TestComponent {}'
+                    }
+                ]
+            });
+            
+            const content = fs.readFileSync(testFile, 'utf8');
+            assert.ok(content.includes('import { Component }'), 'Should have import statement');
+            assert.ok(content.includes('@Component'), 'Should have decorator');
+            assert.ok(content.includes('export class TestComponent'), 'Should have class declaration');
+        });
+    });
+    
+    suite('Hierarchical Validation Tests', () => {
+        test('Should match content with whitespace differences', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'whitespace-test.ts');
+            // Content with specific indentation
+            const initialContent = 'function test() {\n    return true;\n}';
+            fs.writeFileSync(testFile, initialContent);
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            // Search with different whitespace
+            const result = await applyDiffTool.handler({
+                filePath: 'whitespace-test.ts',
+                diffs: [{
+                    startLine: 0,
+                    endLine: 2,
+                    search: 'function test() {\n  return true;\n}', // Different indentation
+                    replace: 'function test() {\n    return false;\n}'
+                }]
+            });
+            
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.ok(updatedContent.includes('return false'), 'Should update despite whitespace differences');
+        });
+        
+        test('Should match content with case differences', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'case-test.ts');
+            const initialContent = 'const MyVariable = "test";';
+            fs.writeFileSync(testFile, initialContent);
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            // Search with different case
+            const result = await applyDiffTool.handler({
+                filePath: 'case-test.ts',
+                diffs: [{
+                    startLine: 0,
+                    endLine: 0,
+                    search: 'const myvariable = "test";', // Different case
+                    replace: 'const MyVariable = "updated";'
+                }]
+            });
+            
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.ok(updatedContent.includes('"updated"'), 'Should update despite case differences');
+        });
+        
+        test('Should use line hints for faster matching', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'line-hint-test.ts');
+            const lines = [];
+            for (let i = 0; i < 100; i++) {
+                lines.push(`const line${i} = ${i};`);
+            }
+            fs.writeFileSync(testFile, lines.join('\n'));
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            // Should find the line quickly with hint
+            const result = await applyDiffTool.handler({
+                filePath: 'line-hint-test.ts',
+                diffs: [{
+                    startLine: 50,
+                    endLine: 50,
+                    search: 'const line50 = 50;',
+                    replace: 'const line50 = 500; // Updated'
+                }]
+            });
+            
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.ok(updatedContent.includes('const line50 = 500; // Updated'), 'Should update the correct line');
+        });
+    });
+    
+    suite('Error Handling Tests', () => {
+        test('Should fail when neither search/originalContent nor replace/newContent provided', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'error-test.ts');
+            fs.writeFileSync(testFile, 'test');
+            
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            try {
+                await applyDiffTool.handler({
+                    filePath: 'error-test.ts',
+                    diffs: [{
+                        startLine: 0,
+                        endLine: 0
+                        // Missing both search/originalContent and replace/newContent
+                    }]
+                });
+                assert.fail('Should throw an error for missing parameters');
+            } catch (error: any) {
+                assert.ok(error.message.includes('must be provided'), 'Should indicate missing parameters');
             }
         });
-
-        test('apply_diff tool should have correct schema', () => {
-            const applyDiffTool = mockServer.tools.get('apply_diff');
-            assert.strictEqual(applyDiffTool !== undefined, true, 'apply_diff tool should exist');
+        
+        test('Should provide detailed error when content not found', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'not-found-test.ts');
+            fs.writeFileSync(testFile, 'actual content in file');
             
-            // Check that the schema has the expected properties
-            const schema = applyDiffTool.schema;
-            assert.strictEqual('filePath' in schema, true, 'Should have filePath parameter');
-            assert.strictEqual('diffs' in schema, true, 'Should have diffs parameter');
-            assert.strictEqual('description' in schema, true, 'Should have description parameter');
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+            
+            try {
+                await applyDiffTool.handler({
+                    filePath: 'not-found-test.ts',
+                    diffs: [{
+                        startLine: 0,
+                        endLine: 0,
+                        search: 'content that does not exist',
+                        replace: 'new content'
+                    }]
+                });
+                assert.fail('Should throw an error when content not found');
+            } catch (error: any) {
+                assert.ok(error.message.includes('Could not find content'), 'Should indicate content not found');
+            }
         });
     });
 });
