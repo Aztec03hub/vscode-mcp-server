@@ -47,6 +47,10 @@
       {
         "command": "vscode-mcp-server.toggleServer",
         "title": "Toggle MCP Server"
+      },
+      {
+        "command": "vscode-mcp-server.toggleAutoApproval",
+        "title": "Toggle Apply Diff Auto-Approval Mode"
       }
     ]
   },
