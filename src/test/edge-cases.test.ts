@@ -1,30 +1,66 @@
-import * as assert from 'assert';
 import { suite, test, before, after } from 'mocha';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as assert from 'assert';
+import { enableTestMode } from '../extension';
 
-// Test edge cases and boundary conditions
+// Test edge cases and special scenarios
 suite('Edge Cases Tests', () => {
+    let testWorkspaceFolder: string;
     let workspaceFolder: vscode.WorkspaceFolder;
     let testFileUri: vscode.Uri;
-    const testFileName = 'edge-cases-test.txt';
+    const testFileName = 'edge-case-test.ts';
+    let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
     
     before(async () => {
-        // Setup test workspace
-        if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
-            assert.fail('No workspace folder is open');
+        // Enable test mode for auto-approval
+        enableTestMode();
+        
+        // Create a temporary test workspace
+        testWorkspaceFolder = path.join(__dirname, 'temp-workspace-edge');
+        if (!fs.existsSync(testWorkspaceFolder)) {
+            fs.mkdirSync(testWorkspaceFolder, { recursive: true });
         }
-        workspaceFolder = vscode.workspace.workspaceFolders[0];
+
+        // Mock workspace folders
+        originalWorkspaceFolders = vscode.workspace.workspaceFolders;
+        workspaceFolder = {
+            uri: vscode.Uri.file(testWorkspaceFolder),
+            name: 'test-workspace',
+            index: 0
+        };
+
+        Object.defineProperty(vscode.workspace, 'workspaceFolders', {
+            value: [workspaceFolder],
+            writable: true,
+            configurable: true
+        });
+        
         testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
     });
     
     after(async () => {
-        // Cleanup test file
-        try {
-            await vscode.workspace.fs.delete(testFileUri);
-        } catch (error) {
-            // Ignore if file doesn't exist
+        // Close all editors to release file handles
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Restore original workspace folders
+        if (originalWorkspaceFolders !== undefined) {
+            Object.defineProperty(vscode.workspace, 'workspaceFolders', {
+                value: originalWorkspaceFolders,
+                writable: true,
+                configurable: true
+            });
+        }
+        
+        // Clean up test workspace
+        if (fs.existsSync(testWorkspaceFolder)) {
+            try {
+                fs.rmSync(testWorkspaceFolder, { recursive: true, force: true });
+            } catch (error) {
+                console.warn('[TEST] Could not clean up test workspace:', error);
+            }
         }
     });
     

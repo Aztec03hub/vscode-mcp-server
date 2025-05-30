@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { MCPServer } from './server';
 import { listWorkspaceFiles } from './tools/file-tools';
+import { applyDiff } from './tools/edit-tools';
 import { logger } from './utils/logger';
 
 // Re-export for testing purposes
@@ -291,6 +292,22 @@ export async function activate(context: vscode.ExtensionContext) {
             'vscode-mcp-server.isAutoApprovalEnabled',
             () => autoApprovalEnabled
         );
+        
+        // Add applyDiff command for testing purposes
+        // This exposes the MCP tool as a VS Code command for automated testing
+        const applyDiffCommand = vscode.commands.registerCommand(
+            'mcp.applyDiff',
+            async (args: { filePath: string; diffs: any[]; description?: string; partialSuccess?: boolean }) => {
+                try {
+                    // Call the applyDiff function directly
+                    await applyDiff(args);
+                    return true; // Return success
+                } catch (error) {
+                    // Re-throw the error so tests can catch it
+                    throw error;
+                }
+            }
+        );
 
         // Add all disposables to the context subscriptions
         context.subscriptions.push(
@@ -299,6 +316,7 @@ export async function activate(context: vscode.ExtensionContext) {
             showServerInfoCommand,
             toggleAutoApprovalCommand,
             isAutoApprovalEnabledCommand,
+            applyDiffCommand,
             { dispose: async () => mcpServer && await mcpServer.stop() }
         );
     } catch (error) {

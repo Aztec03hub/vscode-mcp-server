@@ -293,6 +293,7 @@ suite('Apply Diff Functional Tests', () => {
                 });
 
                 // Now apply multiple non-overlapping diffs
+                // Note: After the first diff creates 5 lines (0-4), we need to adjust our expectations
                 const result2 = await applyDiffTool.handler({
                     filePath: 'multi-diff-new.ts',
                     diffs: [
@@ -303,8 +304,8 @@ suite('Apply Diff Functional Tests', () => {
                             replace: '@Component({\n    selector: "app-test"\n})\nexport class TestComponent {}'
                         },
                         {
-                            startLine: 4,
-                            endLine: 4,
+                            startLine: 7,  // After first replacement adds 3 lines, this moves from 4 to 7
+                            endLine: 7,
                             search: '// Additional code',
                             replace: '// Additional imports\nimport { OnInit } from "@angular/core";'
                         }
