@@ -28,13 +28,13 @@ This guide describes the comprehensive test suite created for the enhanced apply
 
 ### Integration Tests
 
-4. **Backward Compatibility Tests** (`backward-compatibility.test.ts`)
+1. **Backward Compatibility Tests** (`backward-compatibility.test.ts`)
    - Ensures old parameter names (originalContent/newContent) still work
    - Tests mixed parameter usage
    - Validates existing behavior preservation
    - Tests error handling consistency
 
-5. **Edge Cases Tests** (`edge-cases.test.ts`)
+2. **Edge Cases Tests** (`edge-cases.test.ts`)
    - Empty file handling
    - Single line files
    - Files without trailing newlines
@@ -42,7 +42,7 @@ This guide describes the comprehensive test suite created for the enhanced apply
    - Unicode and special characters
    - Different line endings (CRLF vs LF)
 
-6. **Full Workflow Tests** (`integration.test.ts`)
+3. **Full Workflow Tests** (`integration.test.ts`)
    - Complete TypeScript refactoring scenarios
    - JSON configuration updates
    - Multi-file refactoring workflows
@@ -53,8 +53,21 @@ This guide describes the comprehensive test suite created for the enhanced apply
 ### Prerequisites
 ```bash
 npm install
-npm run compile
 ```
+
+### CRITICAL: Before Running Tests
+**You MUST rebuild and reload the extension after ANY code changes:**
+```bash
+npm run compile
+vsce package
+code --install-extension vscode-mcp-server-0.0.4.vsix --force
+code -r .
+```
+
+This is MANDATORY because:
+- VS Code extensions run in a separate host process
+- Code changes are NOT reflected until the extension is repackaged
+- Running tests without rebuilding will test the OLD code
 
 ### Run All Tests
 ```bash

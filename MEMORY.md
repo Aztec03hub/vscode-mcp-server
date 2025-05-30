@@ -246,6 +246,10 @@ This sequence:
 3. **Error Testing**: Use try/catch blocks to test expected failures
 4. **Performance Testing**: Use Date.now() to measure operation duration
 5. **Unicode Testing**: JavaScript string literals handle Unicode correctly
+6. **CRITICAL - Extension Rebuild**: Before running tests, ALWAYS rebuild the extension:
+   ```bash
+   npm run compile && vsce package && code --install-extension vscode-mcp-server-0.0.4.vsix --force && code -r .
+   ```
 
 ## Whitespace Preservation Implementation (Task 6.1)
 
