@@ -1,0 +1,298 @@
+import * as assert from 'assert';
+import { suite, test, before, after } from 'mocha';
+import * as vscode from 'vscode';
+import * as path from 'path';
+
+// Since ValidationHierarchy is not exported, we need to test it through the apply_diff functionality
+// This test file focuses on testing the validation hierarchy behavior
+
+suite('ValidationHierarchy Tests', () => {
+    let workspaceFolder: vscode.WorkspaceFolder;
+    let testFileUri: vscode.Uri;
+    const testFileName = 'validation-hierarchy-test.ts';
+    
+    before(async () => {
+        // Setup test workspace
+        if (!vscode.workspace.workspaceFolders || vscode.workspace.workspaceFolders.length === 0) {
+            assert.fail('No workspace folder is open');
+        }
+        workspaceFolder = vscode.workspace.workspaceFolders[0];
+        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
+    });
+    
+    after(async () => {
+        // Cleanup test file
+        try {
+            await vscode.workspace.fs.delete(testFileUri);
+        } catch (error) {
+            // Ignore if file doesn't exist
+        }
+    });
+    
+    test('Exact match at hint location (Level 1)', async () => {
+        const originalContent = `function hello() {
+    console.log("Hello, world!");
+}
+
+function goodbye() {
+    console.log("Goodbye!");
+}`;
+        
+        // Create test file
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Apply diff with exact match at hinted location
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 4,
+                endLine: 6,
+                search: `function goodbye() {
+    console.log("Goodbye!");
+}`,
+                replace: `function goodbye() {
+    console.log("Farewell!");
+}`
+            }]
+        });
+        
+        // Read the file and verify the change
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        assert.ok(modifiedText.includes('console.log("Farewell!");'), 'File should contain the replacement text');
+        assert.ok(!modifiedText.includes('console.log("Goodbye!");'), 'Original text should be replaced');
+    });
+    
+    test('Exact match near hint (Level 1 - radius search)', async () => {
+        const originalContent = `// Some comment
+function hello() {
+    console.log("Hello!");
+}
+
+// Another comment
+function test() {
+    return true;
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Apply diff with hint slightly off (actual function is at line 6, hint at line 5)
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 5,
+                endLine: 8,
+                search: `function test() {
+    return true;
+}`,
+                replace: `function test() {
+    return false;
+}`
+            }]
+        });
+        
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        assert.ok(modifiedText.includes('return false;'), 'Should find and replace despite hint being slightly off');
+    });
+    
+    test('Whitespace-normalized match (Level 2)', async () => {
+        const originalContent = `function example() {
+\t\tconsole.log("Indented with tabs");
+    return 42;
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Apply diff with different whitespace
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 0,
+                endLine: 3,
+                search: `function example() {
+  console.log("Indented with tabs");
+  return 42;
+}`,
+                replace: `function example() {
+    console.log("Now with spaces");
+    return 42;
+}`
+            }]
+        });
+        
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        assert.ok(modifiedText.includes('Now with spaces'), 'Should match despite whitespace differences');
+    });
+    
+    test('Case-insensitive match (Level 2)', async () => {
+        const originalContent = `function MyFunction() {
+    const MESSAGE = "Hello";
+    console.log(MESSAGE);
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Apply diff with different casing in search
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 0,
+                endLine: 3,
+                search: `function myfunction() {
+    const message = "Hello";
+    console.log(message);
+}`,
+                replace: `function MyFunction() {
+    const MESSAGE = "Hi there";
+    console.log(MESSAGE);
+}`
+            }]
+        });
+        
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        assert.ok(modifiedText.includes('Hi there'), 'Should match with case-insensitive strategy');
+    });
+    
+    test('Similarity match (Level 3)', async () => {
+        const originalContent = `function calculate(a, b) {
+    // Perform calculation
+    const result = a + b;
+    return result;
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Apply diff with slightly different content (missing comment, different variable name)
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 0,
+                endLine: 4,
+                search: `function calculate(a, b) {
+    const sum = a + b;
+    return sum;
+}`,
+                replace: `function calculate(a, b) {
+    // Calculate sum of two numbers
+    const sum = a + b;
+    return sum;
+}`
+            }]
+        });
+        
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        assert.ok(modifiedText.includes('Calculate sum of two numbers'), 'Should match with similarity strategy');
+    });
+    
+    test('Multiple identical matches with line hint disambiguation', async () => {
+        const originalContent = `function process(data) {
+    return data * 2;
+}
+
+function process(data) {
+    return data * 2;
+}
+
+function process(data) {
+    return data * 2;
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Apply diff to the middle occurrence using line hint
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 4,
+                endLine: 6,
+                search: `function process(data) {
+    return data * 2;
+}`,
+                replace: `function process(data) {
+    return data * 3; // Modified
+}`
+            }]
+        });
+        
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        // Count occurrences of each version
+        const originalMatches = (modifiedText.match(/return data \* 2;/g) || []).length;
+        const modifiedMatches = (modifiedText.match(/return data \* 3;/g) || []).length;
+        
+        assert.strictEqual(originalMatches, 2, 'Should have 2 original functions remaining');
+        assert.strictEqual(modifiedMatches, 1, 'Should have 1 modified function');
+        assert.ok(modifiedText.includes('// Modified'), 'Should include the comment from replacement');
+    });
+    
+    test('Early termination on high confidence match', async () => {
+        const originalContent = `function quickMatch() {
+    return "exact";
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // This should match exactly and terminate early without trying other strategies
+        const startTime = Date.now();
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 0,
+                endLine: 2,
+                search: `function quickMatch() {
+    return "exact";
+}`,
+                replace: `function quickMatch() {
+    return "modified";
+}`
+            }]
+        });
+        const duration = Date.now() - startTime;
+        
+        const modifiedContent = await vscode.workspace.fs.readFile(testFileUri);
+        const modifiedText = Buffer.from(modifiedContent).toString('utf8');
+        
+        assert.ok(modifiedText.includes('return "modified";'), 'Should have applied the change');
+        // The exact match should be fast (early termination)
+        assert.ok(duration < 1000, 'Should complete quickly with early termination');
+    });
+    
+    test('Failed match handling', async () => {
+        const originalContent = `function original() {
+    return 1;
+}`;
+        
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        
+        // Try to match content that doesn't exist
+        try {
+            await vscode.commands.executeCommand('mcp.applyDiff', {
+                filePath: testFileName,
+                diffs: [{
+                    startLine: 0,
+                    endLine: 2,
+                    search: `function nonexistent() {
+    return 999;
+}`,
+                    replace: `function replacement() {
+    return 0;
+}`
+                }]
+            });
+            assert.fail('Should have thrown an error for non-matching content');
+        } catch (error) {
+            assert.ok(error instanceof Error, 'Should throw an Error');
+            assert.ok(error.message.includes('Validation failed'), 'Error should mention validation failure');
+        }
+    });
+});

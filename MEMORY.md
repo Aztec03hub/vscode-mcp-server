@@ -78,6 +78,24 @@ const approveCommandId = `mcp.apply-diff.approve.${commandId}`;
 4. Maintain this MEMORY.md file for important learnings
 5. Update task lists with checkmarks (✅) as items are completed
 
+## CRITICAL: Extension Testing Workflow
+**EXTREMELY IMPORTANT**: After making ANY code changes, and before running ANY tests, you MUST rebuild and reload the extension:
+
+```bash
+npm run compile
+vsce package
+code --install-extension vscode-mcp-server-0.0.4.vsix --force
+code -r .
+```
+
+This sequence:
+1. **npm run compile** - Compiles TypeScript to JavaScript
+2. **vsce package** - Creates the .vsix extension package
+3. **code --install-extension** - Installs the updated extension (--force overwrites existing)
+4. **code -r .** - Reloads VS Code in the current directory
+
+**Why this is critical**: VS Code extensions run in a separate extension host process. Changes to the code are NOT reflected until the extension is recompiled, repackaged, and reinstalled. Running tests without this process will test the OLD code, not your changes!
+
 ## Common Issues and Solutions
 - **Issue**: Diff tab not closing properly
   - **Solution**: Enhanced tab detection with multiple label patterns
@@ -149,6 +167,85 @@ const approveCommandId = `mcp.apply-diff.approve.${commandId}`;
 - Calculates average confidence from all valid matches
 - Tooltips use newline characters for multi-line display
 - Strategy names are formatted from kebab-case to Title Case
+
+## Task 9: Integration and Testing Strategy (Completed)
+
+### Test Files Created
+
+1. **validation-hierarchy.test.ts**
+   - Tests all validation levels (exact, permissive, fuzzy)
+   - Tests early termination for performance
+   - Tests line hint disambiguation for multiple matches
+   - Tests failed match handling
+
+2. **structural-validator.test.ts**
+   - Tests unbalanced delimiter detection
+   - Tests JSON validation
+   - Tests quote and comment handling
+   - Tests that warnings don't block changes
+
+3. **cache-performance.test.ts**
+   - Tests file content caching behavior
+   - Tests partial success mode
+   - Tests early termination performance
+   - Tests performance tracking
+
+4. **backward-compatibility.test.ts**
+   - Tests old parameter names (originalContent/newContent)
+   - Tests mixed old and new parameters
+   - Tests file creation behavior
+   - Tests multi-diff behavior preservation
+
+5. **edge-cases.test.ts**
+   - Tests empty file handling
+   - Tests single line files
+   - Tests files without trailing newlines
+   - Tests very long lines
+   - Tests Unicode and special characters
+
+6. **integration.test.ts**
+   - Tests complete TypeScript refactoring workflow
+   - Tests JSON configuration updates
+   - Tests multi-file refactoring
+   - Tests error recovery with partial success
+
+### Testing Patterns Established
+
+1. **Test Structure**
+   ```typescript
+   suite('Component Tests', () => {
+       let workspaceFolder: vscode.WorkspaceFolder;
+       let testFileUri: vscode.Uri;
+       
+       before(async () => { /* setup */ });
+       after(async () => { /* cleanup */ });
+       
+       test('specific behavior', async () => {
+           // arrange, act, assert
+       });
+   });
+   ```
+
+2. **Command Execution Pattern**
+   ```typescript
+   await vscode.commands.executeCommand('mcp.applyDiff', {
+       filePath: testFileName,
+       diffs: [/* ... */]
+   });
+   ```
+
+3. **File Operations**
+   - Use vscode.workspace.fs for all file operations
+   - Always cleanup test files in after() hooks
+   - Handle file creation/deletion errors gracefully
+
+### Key Testing Insights
+
+1. **Template Literal Escaping**: When using template literals in search/replace strings within test code, escape nested template literals with backslashes
+2. **Async/Await**: All VS Code operations are async and must be awaited
+3. **Error Testing**: Use try/catch blocks to test expected failures
+4. **Performance Testing**: Use Date.now() to measure operation duration
+5. **Unicode Testing**: JavaScript string literals handle Unicode correctly
 
 ## Whitespace Preservation Implementation (Task 6.1)
 
