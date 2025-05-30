@@ -114,12 +114,16 @@ class TestContentMatcher {
     private calculateSimilarity(str1: string, str2: string): number {
         // Simple similarity calculation for testing
         const maxLength = Math.max(str1.length, str2.length);
-        if (maxLength === 0) return 1.0;
+        if (maxLength === 0) {
+            return 1.0;
+        }
         
         // Count matching characters (simplified)
         let matches = 0;
         for (let i = 0; i < Math.min(str1.length, str2.length); i++) {
-            if (str1[i] === str2[i]) matches++;
+            if (str1[i] === str2[i]) {
+                matches++;
+            }
         }
         
         return matches / maxLength;
@@ -155,10 +159,14 @@ class TestContentMatcher {
      * Select the best match from candidates based on confidence
      */
     selectBestMatch(candidates: any[], minConfidence: number = 0.7): any {
-        if (candidates.length === 0) return null;
+        if (candidates.length === 0) {
+            return null;
+        }
         
         const validCandidates = candidates.filter(c => c.confidence >= minConfidence);
-        if (validCandidates.length === 0) return null;
+        if (validCandidates.length === 0) {
+            return null;
+        }
         
         // Sort by confidence (highest first)
         validCandidates.sort((a, b) => b.confidence - a.confidence);

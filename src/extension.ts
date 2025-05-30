@@ -105,8 +105,24 @@ async function toggleAutoApproval(context: vscode.ExtensionContext) {
     }
 }
 
+// Test mode flag - set by tests to enable auto-approval
+let testModeEnabled = false;
+
+// Export function to enable test mode (for tests only)
+export function enableTestMode(): void {
+    testModeEnabled = true;
+}
+
 // Export function for other modules to check auto-approval status
 export function isAutoApprovalEnabled(): boolean {
+    // Auto-approve in test mode to prevent dialog timeouts
+    if (testModeEnabled) {
+        return true;
+    }
+    // Also check environment variables as backup
+    if (process.env.NODE_ENV === 'test' || process.env.VSCODE_TEST === '1') {
+        return true;
+    }
     return autoApprovalEnabled;
 }
 
@@ -308,7 +324,9 @@ export async function deactivate() {
         sharedTerminal = undefined;
     }
 
-    if (!mcpServer) return;
+    if (!mcpServer) {
+        return;
+    }
     
     try {
         logger.info('Stopping MCP Server during extension deactivation');

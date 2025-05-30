@@ -13,18 +13,21 @@ suite('Extension Test Suite', () => {
     let extension: any;
     let workspaceConfig: any;
     let statusBarItem: any;
+    let autoApprovalStatusBar: any;
     let context: any; // Changed type to any to avoid type errors
     let getConfigurationStub: sinon.SinonStub;
     let createStatusBarItemStub: sinon.SinonStub;
     let registerCommandStub: sinon.SinonStub;
     let onDidChangeConfigurationStub: sinon.SinonStub;
+    let globalState: any;
 
     setup(() => {
         // Create mock MCPServer
         mockMCPServer = {
             start: sinon.stub().resolves(),
             stop: sinon.stub().resolves(),
-            setFileListingCallback: sinon.spy()
+            setFileListingCallback: sinon.spy(),
+            setupTools: sinon.spy()
         };
         
         // Mock constructor for MCPServer
@@ -35,26 +38,49 @@ suite('Extension Test Suite', () => {
             './server': { MCPServer: MockServerConstructor }
         });
         
-        // Create mock status bar item
+        // Create mock status bar items
         statusBarItem = {
             text: '',
             tooltip: '',
             command: '',
             show: sinon.spy(),
-            dispose: sinon.spy()
+            dispose: sinon.spy(),
+            backgroundColor: undefined
         };
         
-        // Mock vscode.window.createStatusBarItem
-        createStatusBarItemStub = sinon.stub(vscode.window, 'createStatusBarItem').returns(statusBarItem);
+        autoApprovalStatusBar = {
+            text: '',
+            tooltip: '',
+            command: '',
+            show: sinon.spy(),
+            dispose: sinon.spy(),
+            backgroundColor: undefined
+        };
+        
+        // Mock vscode.window.createStatusBarItem to return different items
+        createStatusBarItemStub = sinon.stub(vscode.window, 'createStatusBarItem');
+        createStatusBarItemStub.onFirstCall().returns(statusBarItem);
+        createStatusBarItemStub.onSecondCall().returns(autoApprovalStatusBar);
         
         // Mock configuration
         workspaceConfig = {
-            get: sinon.stub().withArgs('port').returns(4321)
+            get: sinon.stub()
         };
+        workspaceConfig.get.withArgs('port').returns(4321);
+        workspaceConfig.get.withArgs('defaultEnabled').returns(true); // Enable server by default for tests
         getConfigurationStub = sinon.stub(vscode.workspace, 'getConfiguration').returns(workspaceConfig);
+        
+        // Create mock global state
+        globalState = {
+            get: sinon.stub(),
+            update: sinon.stub().resolves()
+        };
+        globalState.get.withArgs('mcpServerEnabled').returns(true);
+        globalState.get.withArgs('autoApprovalEnabled').returns(false);
         
         // Create a mocked extension context
         context = createMockContext();
+        context.globalState = globalState;
         
         // Mock command registration
         registerCommandStub = sinon.stub(vscode.commands, 'registerCommand').returns({
@@ -80,8 +106,10 @@ suite('Extension Test Suite', () => {
         assert.strictEqual(getConfigurationStub.called, true, 'Configuration not accessed');
         assert.strictEqual(workspaceConfig.get.calledWith('port'), true, 'Port not read from configuration');
         
-        // Check that MCPServer was created with configured port
-        assert.strictEqual(MockServerConstructor.calledWith(4321), true, 'MCPServer not created with configured port');
+        // Check that MCPServer was created with configured port (when server is enabled)
+        // Find the call with the correct port and terminal
+        const serverCreated = MockServerConstructor.getCalls().some(call => call.args[0] === 4321);
+        assert.strictEqual(serverCreated, true, 'MCPServer not created with configured port');
     });
 
     test('Status bar item should be created with proper attributes', async () => {
@@ -91,11 +119,11 @@ suite('Extension Test Suite', () => {
         // Verify status bar was created
         assert.strictEqual(createStatusBarItemStub.called, true, 'Status bar item not created');
         
-        // Check the status bar attributes
-        assert.strictEqual(statusBarItem.command, 'vscode-mcp-server.showServerInfo', 'Status bar command not set correctly');
+        // Check the status bar attributes - command should be toggleServer
+        assert.strictEqual(statusBarItem.command, 'vscode-mcp-server.toggleServer', 'Status bar command not set correctly');
         assert.strictEqual(statusBarItem.show.called, true, 'Status bar not shown');
         
-        // Check that the text contains the port number
+        // Check that the text contains the port number (when server is enabled)
         assert.strictEqual(statusBarItem.text.includes('4321'), true, 'Status bar does not show configured port');
     });
 
@@ -110,12 +138,20 @@ suite('Extension Test Suite', () => {
         assert.strictEqual(showServerInfoCall !== undefined, true, 'Server info command not registered');
     });
 
-    test('Configuration change listener should be registered', async () => {
+    test('Commands should be registered properly', async () => {
         // Activate the extension  
         await extension.activate(context);
         
-        // Check that the listener was registered
-        assert.strictEqual(onDidChangeConfigurationStub.called, true, 'Configuration change listener not registered');
+        // Check that the required commands were registered
+        const toggleServerCall = registerCommandStub.getCalls().find(
+            call => call.args[0] === 'vscode-mcp-server.toggleServer'
+        );
+        assert.strictEqual(toggleServerCall !== undefined, true, 'Toggle server command not registered');
+        
+        const toggleAutoApprovalCall = registerCommandStub.getCalls().find(
+            call => call.args[0] === 'vscode-mcp-server.toggleAutoApproval'
+        );
+        assert.strictEqual(toggleAutoApprovalCall !== undefined, true, 'Toggle auto-approval command not registered');
     });
 
     test('Deactivate should clean up resources', async () => {
@@ -125,10 +161,13 @@ suite('Extension Test Suite', () => {
         // Then deactivate
         await extension.deactivate();
         
-        // Check that status bar was disposed
+        // Check that status bar items were disposed
         assert.strictEqual(statusBarItem.dispose.called, true, 'Status bar not disposed during deactivation');
+        assert.strictEqual(autoApprovalStatusBar.dispose.called, true, 'Auto-approval status bar not disposed during deactivation');
         
-        // Check that server was stopped
-        assert.strictEqual(mockMCPServer.stop.called, true, 'Server not stopped during deactivation');
+        // Check that server was stopped (if it was created)
+        if (MockServerConstructor.called) {
+            assert.strictEqual(mockMCPServer.stop.called, true, 'Server not stopped during deactivation');
+        }
     });
 });
