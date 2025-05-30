@@ -11,11 +11,13 @@ suite('Edge Cases Tests', () => {
     let testWorkspaceFolder: string;
     let workspaceFolder: vscode.WorkspaceFolder;
     let testFileUri: vscode.Uri;
-    const testFileName = 'edge-case-test.ts';
+    let testFileName: string;
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
     
     // Helper to create a fresh test file before each test
-    async function createTestFile(content: string) {
+    async function createTestFile(content: string, fileName: string) {
+        testFileName = fileName;
+        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
         // Close any open editors first to ensure clean state
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -53,7 +55,7 @@ suite('Edge Cases Tests', () => {
             configurable: true
         });
         
-        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
+        // testFileUri will be set in createTestFile
     });
     
     after(async () => {
@@ -82,7 +84,7 @@ suite('Edge Cases Tests', () => {
     
     test('Empty file handling', async () => {
         // Create empty file
-        await createTestFile('');
+        await createTestFile('', 'test-empty-file.ts');
         
         // Try to apply diff to empty file
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -102,7 +104,7 @@ suite('Edge Cases Tests', () => {
     });
     
     test('Single line file', async () => {
-        await createTestFile('single line');
+        await createTestFile('single line', 'test-single-line.ts');
         
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
             filePath: testFileName,
@@ -123,7 +125,7 @@ suite('Edge Cases Tests', () => {
     test('File with no newline at end', async () => {
         // Create file without trailing newline
         const contentWithoutNewline = 'line1\nline2\nlast line without newline';
-        await createTestFile(contentWithoutNewline);
+        await createTestFile(contentWithoutNewline, 'test-no-newline.ts');
         
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
             filePath: testFileName,
@@ -145,7 +147,7 @@ suite('Edge Cases Tests', () => {
         // Create file with very long line (1000 characters)
         const longLine = 'x'.repeat(1000);
         const content = `short line\n${longLine}\nanother short line`;
-        await createTestFile(content);
+        await createTestFile(content, 'test-long-lines.ts');
         
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
             filePath: testFileName,
@@ -167,7 +169,7 @@ suite('Edge Cases Tests', () => {
     test('Unicode and special characters', async () => {
         const unicodeContent = `// 日本語コメント\nconst emoji = "🎉🚀💻";\nconst special = "\t\r\n\"\\\'"\;\n/* мультиязычный комментарий */`;
         
-        await createTestFile(unicodeContent);
+        await createTestFile(unicodeContent, 'test-unicode.ts');
         
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
             filePath: testFileName,

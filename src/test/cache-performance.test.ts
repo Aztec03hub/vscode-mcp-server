@@ -11,11 +11,13 @@ suite('Caching and Performance Tests', () => {
     let testWorkspaceFolder: string;
     let workspaceFolder: vscode.WorkspaceFolder;
     let testFileUri: vscode.Uri;
-    const testFileName = 'cache-test.ts';
+    let testFileName: string;
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
     
     // Helper to create a fresh test file before each test
-    async function createTestFile(content: string) {
+    async function createTestFile(content: string, fileName: string) {
+        testFileName = fileName;
+        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
         // Close any open editors first to ensure clean state
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -53,7 +55,7 @@ suite('Caching and Performance Tests', () => {
             configurable: true
         });
         
-        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
+        // testFileUri will be set in createTestFile
     });
     
     after(async () => {
@@ -97,7 +99,7 @@ function four() {
     return 4;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-cache-multiple-diffs.ts');
         
         // Apply multiple diffs in one operation - should use cache
         const startTime = Date.now();
@@ -170,7 +172,7 @@ function alsoValid() {
     return "good";
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-partial-success.ts');
         
         // Apply mix of valid and invalid diffs with partial success enabled
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -232,7 +234,7 @@ function alsoValid() {
         }
         const largeContent = lines.join('\n');
         
-        await createTestFile(largeContent);
+        await createTestFile(largeContent, 'test-early-termination-perf.ts');
         
         // Apply exact match at the beginning - should terminate early
         const startTime = Date.now();
@@ -276,7 +278,7 @@ function alsoValid() {
     test('Cache expires after TTL', async () => {
         const originalContent = `const value = 1;`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-cache-ttl.ts');
         
         // First operation - populates cache
         await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -304,7 +306,7 @@ function alsoValid() {
     return true;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-structured-logger.ts');
         
         // Apply changes multiple times to build up metrics
         for (let i = 0; i < 3; i++) {

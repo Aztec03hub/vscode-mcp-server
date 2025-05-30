@@ -7,7 +7,7 @@ import * as sinon from 'sinon';
 
 // Import the actual apply_diff function for testing
 // Since it's not exported, we'll test it through the MCP tool interface
-import { registerEditTools } from '../tools/edit-tools';
+import { registerEditTools, clearFileCache } from '../tools/edit-tools';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { enableTestMode } from '../extension';
 
@@ -279,6 +279,10 @@ suite('Apply Diff Functional Tests', () => {
 
                 const applyDiffTool = mockServer.tools.get('apply_diff');
 
+                // Clear any cached content for this file
+                const fileUri = vscode.Uri.file(testFile);
+                clearFileCache(fileUri);
+
                 // First, create a file with some initial content to avoid overlap issues
                 const result = await applyDiffTool.handler({
                     filePath: 'multi-diff-new.ts',
@@ -291,6 +295,9 @@ suite('Apply Diff Functional Tests', () => {
                         }
                     ]
                 });
+
+                // Clear cache again before second operation
+                clearFileCache(fileUri);
 
                 // Now apply multiple non-overlapping diffs
                 // Note: After the first diff creates 5 lines (0-4), we need to adjust our expectations

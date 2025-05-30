@@ -270,14 +270,25 @@ This sequence:
    - Added configuration change listener to fix test expectations
    - All extension tests now pass correctly
 
-2. ✅ Auto-approval mode is working for most tests
-   - Test mode detection is functioning
-   - Most Apply Diff tests are running without timeouts
+2. ✅ Reduced test failures from 15 to 7
+   - Fixed test isolation issues by using unique file names per test
+   - Fixed cache clearing between tests
+   - Most test suites now passing correctly
 
-#### Remaining Issues
-1. Some ValidationHierarchy tests failing due to test data issues
-2. A few Apply Diff Functional tests still have issues with error message expectations
-3. Some tests are looking for content that doesn't exist in their test files
+#### Remaining Issues (7 tests)
+1. ValidationHierarchy - 2 tests
+   - "Similarity match" test expects different content
+   - "Failed match handling" test expects specific error message
+
+2. Edge Cases - 3 tests  
+   - File content mismatch issues despite unique file names
+   - Unicode test showing encoding issues in error output
+
+3. Apply Diff Functional - 1 test
+   - Multiple diffs on new file test needs cache clearing
+
+4. Integration - 1 test
+   - Partial success test expects different behavior
 
 ### Remaining Work
 Waiting for test results to see if all 20 failing tests are now fixed

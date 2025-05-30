@@ -13,11 +13,13 @@ suite('ValidationHierarchy Tests', () => {
     let testWorkspaceFolder: string;
     let workspaceFolder: vscode.WorkspaceFolder;
     let testFileUri: vscode.Uri;
-    const testFileName = 'validation-hierarchy-test.ts';
+    let testFileName: string;
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
     
     // Helper to create a fresh test file before each test
-    async function createTestFile(content: string) {
+    async function createTestFile(content: string, fileName: string) {
+        testFileName = fileName;
+        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
         // Close any open editors first to ensure clean state
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -55,7 +57,7 @@ suite('ValidationHierarchy Tests', () => {
             configurable: true
         });
         
-        testFileUri = vscode.Uri.joinPath(workspaceFolder.uri, testFileName);
+        // testFileUri will be set in createTestFile
     });
     
     after(async () => {
@@ -92,7 +94,7 @@ function goodbye() {
 }`;
         
         // Create test file
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-exact-match-hint.ts');
         
         // Apply diff with exact match at hinted location
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -128,7 +130,7 @@ function test() {
     return true;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-exact-match-near.ts');
         
         // Apply diff with hint slightly off (actual function is at line 6, hint at line 5)
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -157,7 +159,7 @@ function test() {
     return 42;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-whitespace-normalized.ts');
         
         // Apply diff with different whitespace
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -188,7 +190,7 @@ function test() {
     console.log(MESSAGE);
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-case-insensitive.ts');
         
         // Apply diff with different casing in search
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -220,7 +222,7 @@ function test() {
     return result;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-similarity-match.ts');
         
         // Apply diff with slightly different content (missing comment, different variable name)
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -259,7 +261,7 @@ function process(data) {
     return data * 2;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-multiple-matches.ts');
         
         // Apply diff to the middle occurrence using line hint
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -293,7 +295,7 @@ function process(data) {
     return "exact";
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-early-termination.ts');
         
         // This should match exactly and terminate early without trying other strategies
         const startTime = Date.now();
@@ -325,7 +327,7 @@ function process(data) {
     return 1;
 }`;
         
-        await createTestFile(originalContent);
+        await createTestFile(originalContent, 'test-failed-match.ts');
         
         // Try to match content that doesn't exist
         try {
