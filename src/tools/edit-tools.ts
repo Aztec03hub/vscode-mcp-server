@@ -291,7 +291,7 @@ async function getCachedFileContent(fileUri: vscode.Uri): Promise<{
 /**
  * Clear cache for a specific file
  */
-function clearFileCache(fileUri: vscode.Uri): void {
+export function clearFileCache(fileUri: vscode.Uri): void {
     const cacheKey = fileUri.toString();
     fileContentCache.delete(cacheKey);
     console.log(`[Cache] Cleared cache for ${fileUri.fsPath}`);

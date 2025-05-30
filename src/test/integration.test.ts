@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as assert from 'assert';
 import { enableTestMode } from '../extension';
+import { clearFileCache } from '../tools/edit-tools';
 
 // Integration tests for complete workflows
 suite('Apply Diff Integration Tests', () => {
@@ -12,6 +13,20 @@ suite('Apply Diff Integration Tests', () => {
     const testProjectDir = 'test-project';
     let projectUri: vscode.Uri;
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
+    
+    // Helper to create a fresh test file before each test
+    async function createProjectFile(filename: string, content: string) {
+        // Close any open editors first to ensure clean state
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        const fileUri = vscode.Uri.joinPath(projectUri, filename);
+        // Clear the cache for this file to ensure fresh read
+        clearFileCache(fileUri);
+        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content));
+        // Give VS Code time to process the file creation
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
     before(async () => {
         // Enable test mode for auto-approval
@@ -98,7 +113,7 @@ interface User {
     email: string;
 }`;
         
-        await vscode.workspace.fs.writeFile(tsFileUri, Buffer.from(originalCode));
+        await createProjectFile(tsFile, originalCode);
         
         // Apply multiple refactoring changes
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -180,7 +195,7 @@ interface User {
   }
 }`;
         
-        await vscode.workspace.fs.writeFile(jsonFileUri, Buffer.from(originalJson));
+        await createProjectFile(jsonFile, originalJson);
         
         // Update JSON configuration
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -271,7 +286,7 @@ console.log(calculate('subtract', 10, 4));`
         // Create all files
         for (const file of files) {
             const fileUri = vscode.Uri.joinPath(projectUri, file.name);
-            await vscode.workspace.fs.writeFile(fileUri, Buffer.from(file.content));
+            await createProjectFile(file.name, file.content);
         }
         
         // Refactor to ES6 modules - one file at a time
@@ -346,7 +361,7 @@ console.log(calculate('subtract', 10, 4));`
 function two() { return 2; }
 function three() { return 3; }`;
         
-        await vscode.workspace.fs.writeFile(errorTestUri, Buffer.from(originalContent));
+        await createProjectFile(errorTestFile, originalContent);
         
         // Apply mix of valid and invalid changes with partial success
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {

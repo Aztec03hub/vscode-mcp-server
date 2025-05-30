@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as assert from 'assert';
 import { enableTestMode } from '../extension';
+import { clearFileCache } from '../tools/edit-tools';
 
 // Since ValidationHierarchy is not exported, we need to test it through the apply_diff functionality
 // This test file focuses on testing the validation hierarchy behavior
@@ -14,6 +15,21 @@ suite('ValidationHierarchy Tests', () => {
     let testFileUri: vscode.Uri;
     const testFileName = 'validation-hierarchy-test.ts';
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
+    
+    // Helper to create a fresh test file before each test
+    async function createTestFile(content: string) {
+        // Close any open editors first to ensure clean state
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Clear the cache for this file to ensure fresh read
+        clearFileCache(testFileUri);
+        
+        // Write the new content
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(content));
+        // Give VS Code time to process the file creation
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
     before(async () => {
         // Enable test mode for auto-approval
@@ -76,7 +92,7 @@ function goodbye() {
 }`;
         
         // Create test file
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff with exact match at hinted location
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -112,7 +128,7 @@ function test() {
     return true;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff with hint slightly off (actual function is at line 6, hint at line 5)
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -141,7 +157,7 @@ function test() {
     return 42;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff with different whitespace
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -172,7 +188,7 @@ function test() {
     console.log(MESSAGE);
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff with different casing in search
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -204,7 +220,7 @@ function test() {
     return result;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff with slightly different content (missing comment, different variable name)
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -243,7 +259,7 @@ function process(data) {
     return data * 2;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff to the middle occurrence using line hint
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -277,7 +293,7 @@ function process(data) {
     return "exact";
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // This should match exactly and terminate early without trying other strategies
         const startTime = Date.now();
@@ -309,7 +325,7 @@ function process(data) {
     return 1;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Try to match content that doesn't exist
         try {

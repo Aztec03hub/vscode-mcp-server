@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as assert from 'assert';
 import { enableTestMode } from '../extension';
+import { clearFileCache } from '../tools/edit-tools';
 
 // Test backward compatibility with old parameter names
 suite('Backward Compatibility Tests', () => {
@@ -12,6 +13,21 @@ suite('Backward Compatibility Tests', () => {
     let testFileUri: vscode.Uri;
     const testFileName = 'backward-compat-test.ts';
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
+    
+    // Helper to create a fresh test file before each test
+    async function createTestFile(content: string) {
+        // Close any open editors first to ensure clean state
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Clear the cache for this file to ensure fresh read
+        clearFileCache(testFileUri);
+        
+        // Write the new content
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(content));
+        // Give VS Code time to process the file creation
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
     before(async () => {
         // Enable test mode for auto-approval
@@ -69,7 +85,7 @@ suite('Backward Compatibility Tests', () => {
     return "original";
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Use old parameter names - should still work with deprecation warnings
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -101,7 +117,7 @@ function second() {
     return 2;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Mix old and new parameter names
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -185,7 +201,7 @@ line3
 line4
 line5`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Test traditional line-based replacement
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -211,7 +227,7 @@ modified4`
     test('Error behavior for invalid parameters unchanged', async () => {
         const originalContent = `const test = true;`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Test with missing required parameters
         try {
@@ -235,7 +251,7 @@ modified4`
 function b() { return 2; }
 function c() { return 3; }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply multiple diffs in reverse order (bottom to top)
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {

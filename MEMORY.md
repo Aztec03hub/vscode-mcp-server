@@ -251,6 +251,46 @@ This sequence:
    npm run compile && vsce package && code --install-extension vscode-mcp-server-0.0.4.vsix --force && code -r .
    ```
 
+## Test Suite Fixes Summary
+
+### Issues Found and Fixed:
+1. ✅ TypeScript compilation error due to test files in output directory - Fixed by excluding `out/**/*` in tsconfig.json
+2. ✅ Tests were not creating fresh files between test runs - Added helper functions in all test suites
+3. ✅ Tests were using cached file content from previous tests - Fixed by exporting and using `clearFileCache` function
+
+### Test Infrastructure Improvements:
+- Added `clearFileCache` import to all test files
+- Updated all `createTestFile` helper functions to clear cache before writing new content
+- Ensured editors are closed and cache is cleared between tests
+
+### Test Fix Progress:
+
+#### Fixed Issues:
+1. ✅ Extension Test Suite (5/5 tests passing)
+   - Added configuration change listener to fix test expectations
+   - All extension tests now pass correctly
+
+2. ✅ Auto-approval mode is working for most tests
+   - Test mode detection is functioning
+   - Most Apply Diff tests are running without timeouts
+
+#### Remaining Issues:
+1. Some ValidationHierarchy tests failing due to test data issues
+2. A few Apply Diff Functional tests still have issues with error message expectations
+3. Some tests are looking for content that doesn't exist in their test files
+
+### Remaining Work:
+Waiting for test results to see if all 20 failing tests are now fixed
+
+### Root Cause:
+The tests are modifying shared test files and subsequent tests expect the original content but find modified content from previous tests. Even with the helper function, files are being reused across tests.
+
+### Solution:
+Each test needs to work with completely isolated file content, either by:
+1. Using unique filenames for each test
+2. Properly resetting file content before each test
+3. Making tests independent of previous test state
+
 ## Test Infrastructure Fixes
 
 ### Test File Creation Pattern

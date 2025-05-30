@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as assert from 'assert';
 import { enableTestMode } from '../extension';
+import { clearFileCache } from '../tools/edit-tools';
 
 // Test the structural validation feature through apply_diff
 suite('StructuralValidator Tests', () => {
@@ -12,6 +13,21 @@ suite('StructuralValidator Tests', () => {
     let testFileUri: vscode.Uri;
     const testFileName = 'structural-validator-test.ts';
     let originalWorkspaceFolders: readonly vscode.WorkspaceFolder[] | undefined;
+    
+    // Helper to create a fresh test file before each test
+    async function createTestFile(content: string) {
+        // Close any open editors first to ensure clean state
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Clear the cache for this file to ensure fresh read
+        clearFileCache(testFileUri);
+        
+        // Write the new content
+        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(content));
+        // Give VS Code time to process the file creation
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
     
     before(async () => {
         // Enable test mode for auto-approval
@@ -71,7 +87,7 @@ suite('StructuralValidator Tests', () => {
     }
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff that creates unbalanced braces (adds opening but not closing)
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -100,7 +116,7 @@ suite('StructuralValidator Tests', () => {
     test('Detects unbalanced parentheses', async () => {
         const originalContent = `const result = calculate(10, 20);`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff that creates unbalanced parentheses
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -122,7 +138,7 @@ suite('StructuralValidator Tests', () => {
     test('Detects unbalanced quotes', async () => {
         const originalContent = `const message = "Hello, world!";`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff that creates unclosed string
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -150,7 +166,11 @@ suite('StructuralValidator Tests', () => {
     "version": "1.0.0"
 }`;
         
+        // Clear cache for JSON file
+        clearFileCache(jsonFileUri);
+        
         await vscode.workspace.fs.writeFile(jsonFileUri, Buffer.from(originalContent));
+        await new Promise(resolve => setTimeout(resolve, 50));
         
         try {
             // Apply diff that breaks JSON structure
@@ -188,7 +208,7 @@ function test() {
     return true;
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff that adds an unclosed comment
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -216,7 +236,7 @@ function test() {
     return arr.map(x => x * 2);
 }`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff that maintains balance
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
@@ -242,7 +262,7 @@ function test() {
     test('Detects changes in structural balance', async () => {
         const originalContent = `const incomplete = "test`;
         
-        await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(originalContent));
+        await createTestFile(originalContent);
         
         // Apply diff that fixes the unbalanced quote
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {

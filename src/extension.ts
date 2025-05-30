@@ -309,6 +309,20 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         );
 
+        // Listen for configuration changes
+        const configChangeListener = vscode.workspace.onDidChangeConfiguration(e => {
+            if (e.affectsConfiguration('vscode-mcp-server.port')) {
+                const newPort = vscode.workspace.getConfiguration('vscode-mcp-server').get<number>('port') || 3000;
+                updateStatusBar(newPort);
+                
+                if (serverEnabled && mcpServer) {
+                    vscode.window.showInformationMessage(
+                        `Port configuration changed to ${newPort}. Please restart the server for changes to take effect.`
+                    );
+                }
+            }
+        });
+        
         // Add all disposables to the context subscriptions
         context.subscriptions.push(
             statusBarItem,
@@ -317,6 +331,7 @@ export async function activate(context: vscode.ExtensionContext) {
             toggleAutoApprovalCommand,
             isAutoApprovalEnabledCommand,
             applyDiffCommand,
+            configChangeListener,
             { dispose: async () => mcpServer && await mcpServer.stop() }
         );
     } catch (error) {
