@@ -68,8 +68,8 @@ const approveCommandId = `mcp.apply-diff.approve.${commandId}`;
 
 ## Future Considerations
 - Performance optimization for large files still needed
-- Structural integrity checks (Task 5) not yet implemented
 - Could benefit from caching during multi-diff operations
+- Test coverage for structural validation edge cases
 
 ## Tool Usage Best Practices
 1. Always read files in full before making changes
@@ -93,3 +93,101 @@ const approveCommandId = `mcp.apply-diff.approve.${commandId}`;
 2. **Progressive Error Disclosure**: Helps users understand issues at appropriate detail level
 3. **Atomic Operations**: All-or-nothing approach prevents partial file corruption
 4. **User Approval Required**: Ensures safety for production use (unless auto-approval enabled)
+5. **Non-Blocking Structural Validation**: Warnings don't prevent changes, respecting user intent
+
+## Structural Validation Implementation (Task 5)
+
+### Key Design Decisions
+1. **Non-blocking warnings**: Structural issues are reported as warnings, not errors
+2. **Language-aware validation**: Different rules for JSON, TypeScript/JavaScript
+3. **Context-aware parsing**: Ignores delimiters inside strings and comments
+4. **Comprehensive analysis**: Reports what changed structurally, not just problems
+
+### Implementation Details
+- `StructuralValidator` class handles all structural integrity checks
+- Counts delimiters before and after changes to detect imbalances
+- Properly handles escape sequences and nested structures
+- Validates JSON files by attempting to parse them
+- Basic TypeScript/JavaScript validation for common patterns
+
+### Structural Elements Tracked
+- Braces: `{` `}`
+- Parentheses: `(` `)`
+- Brackets: `[` `]`
+- Quotes: `'` `"` `` ` ``
+- Block comments: `/*` `*/`
+
+### Warning Severity Levels
+- **High**: Unbalanced delimiters, invalid JSON, unclosed comments
+- **Medium**: Odd number of quotes (possible unclosed string)
+- **Low**: Style issues like trailing commas, incomplete function declarations
+
+## Whitespace Preservation Implementation (Task 6.1)
+
+### Key Features
+1. **Line ending detection**: Automatically detects CRLF vs LF from original file
+2. **Indentation preservation**: Maintains original indentation patterns
+3. **Smart indentation application**: Only applies indentation where appropriate
+4. **Empty line handling**: Preserves empty lines without adding unwanted indentation
+
+### Implementation Details
+- Detects line endings by counting occurrences of `\r\n` vs `\n`
+- Extracts leading whitespace from lines being replaced
+- Applies original indentation to new lines intelligently
+- Preserves exact formatting of the original file
+
+### Edge Cases Handled
+- New files default to LF line endings
+- Lines that already have indentation are not double-indented
+- Empty lines remain empty (no whitespace added)
+- Mixed indentation (tabs vs spaces) is preserved as-is
+
+## Performance Optimizations (Task 7)
+
+### Implemented Optimizations
+
+#### 1. File Content Caching
+- Global cache with 5-second TTL for file content
+- Prevents redundant file reads during multi-diff operations
+- Automatic cache cleanup for expired entries
+- Cache key based on file URI for uniqueness
+
+#### 2. Early Termination in Validation
+- Stops validation once confidence >= 0.95 (configurable)
+- Reduces unnecessary validation attempts
+- Significantly faster for exact matches
+- Optional parameter to control termination threshold
+
+#### 3. Partial Success Handling
+- New `partialSuccess` flag in ApplyDiffArgs
+- Applies successful diffs even if some fail
+- Detailed logging of which diffs succeeded/failed
+- Warnings added to inform user of partial application
+
+#### 4. Structured Logging
+- `StructuredLogger` class for consistent logging
+- JSON-exportable log entries with timestamps
+- Log levels: DEBUG, INFO, WARN, ERROR
+- Filterable by component, level, or time range
+- Performance metrics included (duration tracking)
+
+### Performance Patterns
+```typescript
+// Cache usage
+const { content, lines } = await getCachedFileContent(fileUri);
+
+// Early termination
+const result = await validationHierarchy.executeHierarchy(
+    matcher, lines, targetContent, startHint,
+    { earlyTerminationConfidence: 0.95 }
+);
+
+// Structured logging
+StructuredLogger.log(
+    LogLevel.INFO,
+    'applyDiff',
+    'Validation complete',
+    { diffsCount: diffs.length },
+    duration
+);
+```

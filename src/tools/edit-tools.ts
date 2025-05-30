@@ -8,6 +8,16 @@ import { isAutoApprovalEnabled } from '../extension';
 
 // ===== Apply Diff Tool Interfaces =====
 
+// Global cache for file content during batch operations
+const fileContentCache = new Map<string, {
+    content: string;
+    lines: string[];
+    timestamp: number;
+}>;
+
+// Cache TTL in milliseconds (5 seconds)
+const CACHE_TTL = 5000;
+
 interface DiffSection {
     startLine: number;     // 0-based line number
     endLine: number;       // 0-based line number (inclusive)
@@ -23,6 +33,7 @@ interface ApplyDiffArgs {
     filePath: string;
     description?: string;  // Overall description (moved up in parameter order)
     diffs: DiffSection[];  // Array of diff sections
+    partialSuccess?: boolean; // Whether to apply successful diffs even if some fail
 }
 
 interface MatchingOptions {
@@ -56,6 +67,246 @@ interface ConflictInfo {
     diffIndex2?: number;
     description: string;
     suggestion: string;
+}
+
+// ===== Structural Integrity Validation =====
+
+/**
+ * Represents structural elements that should be balanced
+ */
+interface StructuralElements {
+    braces: { open: number; close: number; };           // { }
+    parentheses: { open: number; close: number; };      // ( )
+    brackets: { open: number; close: number; };         // [ ]
+    singleQuotes: number;                               // '
+    doubleQuotes: number;                               // "
+    backticks: number;                                  // `
+    blockComments: { open: number; close: number; };    // /* */
+}
+
+/**
+ * Structural validation result
+ */
+interface StructuralValidationResult {
+    isValid: boolean;
+    warnings: StructuralWarning[];
+    elementsBefore: StructuralElements;
+    elementsAfter: StructuralElements;
+    analysis: string;
+}
+
+/**
+ * Represents a structural warning
+ */
+interface StructuralWarning {
+    type: 'unbalanced_braces' | 'unbalanced_parentheses' | 'unbalanced_brackets' | 
+          'unbalanced_quotes' | 'unclosed_string' | 'unclosed_comment' | 
+          'syntax_error' | 'json_invalid';
+    severity: 'low' | 'medium' | 'high';
+    message: string;
+    details?: string;
+}
+
+// ===== Structured Logging =====
+
+/**
+ * Log levels for structured logging
+ */
+enum LogLevel {
+    DEBUG = 'debug',
+    INFO = 'info',
+    WARN = 'warn',
+    ERROR = 'error'
+}
+
+/**
+ * Structured log entry
+ */
+interface LogEntry {
+    timestamp: string;
+    level: LogLevel;
+    component: string;
+    message: string;
+    data?: any;
+    duration?: number;
+}
+
+/**
+ * Structured logger for apply_diff operations
+ */
+class StructuredLogger {
+    private static entries: LogEntry[] = [];
+    private static maxEntries = 1000;
+    
+    static log(level: LogLevel, component: string, message: string, data?: any, duration?: number): void {
+        const entry: LogEntry = {
+            timestamp: new Date().toISOString(),
+            level,
+            component,
+            message,
+            data,
+            duration
+        };
+        
+        this.entries.push(entry);
+        
+        // Trim old entries
+        if (this.entries.length > this.maxEntries) {
+            this.entries = this.entries.slice(-this.maxEntries);
+        }
+        
+        // Output to console based on level
+        const prefix = `[${component}]`;
+        const fullMessage = duration ? `${message} (${duration}ms)` : message;
+        
+        switch (level) {
+            case LogLevel.DEBUG:
+                console.log(prefix, fullMessage, data || '');
+                break;
+            case LogLevel.INFO:
+                console.info(prefix, fullMessage, data || '');
+                break;
+            case LogLevel.WARN:
+                console.warn(prefix, fullMessage, data || '');
+                break;
+            case LogLevel.ERROR:
+                console.error(prefix, fullMessage, data || '');
+                break;
+        }
+    }
+    
+    static getEntries(filter?: { level?: LogLevel; component?: string; since?: Date }): LogEntry[] {
+        let filtered = this.entries;
+        
+        if (filter?.level) {
+            filtered = filtered.filter(e => e.level === filter.level);
+        }
+        if (filter?.component) {
+            filtered = filtered.filter(e => e.component === filter.component);
+        }
+        if (filter?.since) {
+            const sinceTime = filter.since.toISOString();
+            filtered = filtered.filter(e => e.timestamp >= sinceTime);
+        }
+        
+        return filtered;
+    }
+    
+    static exportAsJson(): string {
+        return JSON.stringify(this.entries, null, 2);
+    }
+    
+    static clear(): void {
+        this.entries = [];
+    }
+    
+    /**
+     * Get performance metrics for a component
+     */
+    static getPerformanceMetrics(component: string, since?: Date): {
+        avgDuration: number;
+        minDuration: number;
+        maxDuration: number;
+        count: number;
+        successRate: number;
+    } {
+        const entries = this.getEntries({ component, since }).filter(e => e.duration !== undefined);
+        
+        if (entries.length === 0) {
+            return { avgDuration: 0, minDuration: 0, maxDuration: 0, count: 0, successRate: 0 };
+        }
+        
+        const durations = entries.map(e => e.duration!);
+        const successCount = entries.filter(e => e.level !== LogLevel.ERROR).length;
+        
+        return {
+            avgDuration: durations.reduce((a, b) => a + b, 0) / durations.length,
+            minDuration: Math.min(...durations),
+            maxDuration: Math.max(...durations),
+            count: entries.length,
+            successRate: (successCount / entries.length) * 100
+        };
+    }
+    
+    /**
+     * Track operation success/failure for reliability monitoring
+     */
+    static trackOperation(component: string, operation: string, success: boolean, duration?: number, details?: any): void {
+        this.log(
+            success ? LogLevel.INFO : LogLevel.ERROR,
+            component,
+            `${operation} ${success ? 'succeeded' : 'failed'}`,
+            { operation, success, ...details },
+            duration
+        );
+    }
+}
+
+// ===== Cache Management =====
+
+/**
+ * Get cached file content or read from disk
+ */
+async function getCachedFileContent(fileUri: vscode.Uri): Promise<{
+    content: string;
+    lines: string[];
+}> {
+    const cacheKey = fileUri.toString();
+    const cached = fileContentCache.get(cacheKey);
+    
+    // Check if cache is valid
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+        console.log(`[Cache] Using cached content for ${fileUri.fsPath}`);
+        return {
+            content: cached.content,
+            lines: cached.lines
+        };
+    }
+    
+    // Read from disk
+    console.log(`[Cache] Reading content from disk for ${fileUri.fsPath}`);
+    try {
+        const document = await vscode.workspace.openTextDocument(fileUri);
+        const content = document.getText();
+        const lines: string[] = [];
+        
+        for (let i = 0; i < document.lineCount; i++) {
+            lines.push(document.lineAt(i).text);
+        }
+        
+        // Update cache
+        fileContentCache.set(cacheKey, {
+            content,
+            lines,
+            timestamp: Date.now()
+        });
+        
+        return { content, lines };
+    } catch (error) {
+        // File doesn't exist
+        return { content: '', lines: [] };
+    }
+}
+
+/**
+ * Clear cache for a specific file
+ */
+function clearFileCache(fileUri: vscode.Uri): void {
+    const cacheKey = fileUri.toString();
+    fileContentCache.delete(cacheKey);
+    console.log(`[Cache] Cleared cache for ${fileUri.fsPath}`);
+}
+
+/**
+ * Clear all expired cache entries
+ */
+function cleanupCache(): void {
+    const now = Date.now();
+    for (const [key, value] of fileContentCache.entries()) {
+        if (now - value.timestamp > CACHE_TTL) {
+            fileContentCache.delete(key);
+        }
+    }
 }
 
 // ===== Enhanced Diagnostics =====
@@ -369,24 +620,33 @@ class ValidationHierarchy {
     }
     
     /**
-     * Execute validation strategies in hierarchical order
+     * Execute validation strategies in hierarchical order with early termination
      */
     async executeHierarchy(
         matcher: ContentMatcher,
         lines: string[],
         targetContent: string,
-        startHint?: number
+        startHint?: number,
+        options?: {
+            earlyTerminationConfidence?: number;  // Stop if confidence >= this value
+            maxAttempts?: number;                 // Maximum strategies to try
+        }
     ): Promise<{
         match: MatchResult | null;
         attempts: ValidationAttempt[];
         totalDuration: number;
+        earlyTerminated: boolean;
     }> {
         const attempts: ValidationAttempt[] = [];
         const startTime = Date.now();
         let match: MatchResult | null = null;
+        const earlyTerminationConfidence = options?.earlyTerminationConfidence ?? 0.95;
+        const maxAttempts = options?.maxAttempts ?? this.strategies.length;
+        let earlyTerminated = false;
         
         // Execute strategies in order until a match is found
-        for (const strategy of this.strategies) {
+        for (let i = 0; i < this.strategies.length && i < maxAttempts; i++) {
+            const strategy = this.strategies[i];
             const attemptStart = Date.now();
             
             try {
@@ -402,7 +662,20 @@ class ValidationHierarchy {
                 if (result) {
                     match = result;
                     console.log(`[ValidationHierarchy] Match found with ${strategy.name} (confidence: ${result.confidence})`);
-                    break;
+                    
+                    // Early termination for high-confidence matches
+                    if (result.confidence >= earlyTerminationConfidence) {
+                        console.log(`[ValidationHierarchy] Early termination - confidence ${result.confidence} >= ${earlyTerminationConfidence}`);
+                        earlyTerminated = true;
+                        break;
+                    }
+                    
+                    // For lower confidence, continue searching unless we're at level 3
+                    if (strategy.level < 3) {
+                        continue;
+                    } else {
+                        break;
+                    }
                 }
             } catch (error) {
                 attempts.push({
@@ -417,7 +690,8 @@ class ValidationHierarchy {
         return {
             match,
             attempts,
-            totalDuration: Date.now() - startTime
+            totalDuration: Date.now() - startTime,
+            earlyTerminated
         };
     }
     
@@ -455,6 +729,346 @@ class ValidationHierarchy {
         }
         
         return lines.join('\n');
+    }
+}
+
+// ===== Structural Integrity Validation Implementation =====
+
+/**
+ * Validates structural integrity of code before and after modifications
+ */
+class StructuralValidator {
+    /**
+     * Count structural elements in content
+     */
+    private countElements(content: string): StructuralElements {
+        const elements: StructuralElements = {
+            braces: { open: 0, close: 0 },
+            parentheses: { open: 0, close: 0 },
+            brackets: { open: 0, close: 0 },
+            singleQuotes: 0,
+            doubleQuotes: 0,
+            backticks: 0,
+            blockComments: { open: 0, close: 0 }
+        };
+        
+        let inSingleQuote = false;
+        let inDoubleQuote = false;
+        let inBacktick = false;
+        let inBlockComment = false;
+        let inLineComment = false;
+        let escapeNext = false;
+        
+        for (let i = 0; i < content.length; i++) {
+            const char = content[i];
+            const nextChar = content[i + 1];
+            const prevChar = content[i - 1];
+            
+            // Handle escape sequences
+            if (escapeNext) {
+                escapeNext = false;
+                continue;
+            }
+            if (char === '\\') {
+                escapeNext = true;
+                continue;
+            }
+            
+            // Skip characters inside strings
+            if (inSingleQuote || inDoubleQuote || inBacktick) {
+                if (char === "'" && inSingleQuote) {
+                    inSingleQuote = false;
+                } else if (char === '"' && inDoubleQuote) {
+                    inDoubleQuote = false;
+                } else if (char === '`' && inBacktick) {
+                    inBacktick = false;
+                }
+                continue;
+            }
+            
+            // Skip characters inside comments
+            if (inBlockComment) {
+                if (char === '*' && nextChar === '/') {
+                    elements.blockComments.close++;
+                    inBlockComment = false;
+                    i++; // Skip next char
+                }
+                continue;
+            }
+            if (inLineComment) {
+                if (char === '\n') {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            
+            // Handle comments
+            if (char === '/' && nextChar === '*') {
+                elements.blockComments.open++;
+                inBlockComment = true;
+                i++; // Skip next char
+                continue;
+            }
+            if (char === '/' && nextChar === '/') {
+                inLineComment = true;
+                i++; // Skip next char
+                continue;
+            }
+            
+            // Handle strings
+            if (char === "'") {
+                elements.singleQuotes++;
+                inSingleQuote = true;
+            } else if (char === '"') {
+                elements.doubleQuotes++;
+                inDoubleQuote = true;
+            } else if (char === '`') {
+                elements.backticks++;
+                inBacktick = true;
+            }
+            
+            // Count structural elements
+            switch (char) {
+                case '{': elements.braces.open++; break;
+                case '}': elements.braces.close++; break;
+                case '(': elements.parentheses.open++; break;
+                case ')': elements.parentheses.close++; break;
+                case '[': elements.brackets.open++; break;
+                case ']': elements.brackets.close++; break;
+            }
+        }
+        
+        return elements;
+    }
+    
+    /**
+     * Validate structural integrity
+     */
+    validateStructure(contentBefore: string, contentAfter: string, filePath: string): StructuralValidationResult {
+        const elementsBefore = this.countElements(contentBefore);
+        const elementsAfter = this.countElements(contentAfter);
+        const warnings: StructuralWarning[] = [];
+        
+        // Check for unbalanced delimiters
+        this.checkDelimiterBalance(elementsBefore, elementsAfter, warnings);
+        
+        // Check for unclosed strings and comments
+        this.checkUnclosedElements(elementsAfter, warnings);
+        
+        // Language-specific validation
+        const fileExtension = filePath.split('.').pop()?.toLowerCase();
+        if (fileExtension) {
+            this.performLanguageSpecificValidation(contentAfter, fileExtension, warnings);
+        }
+        
+        // Generate analysis
+        const analysis = this.generateAnalysis(elementsBefore, elementsAfter);
+        
+        return {
+            isValid: warnings.filter(w => w.severity === 'high').length === 0,
+            warnings,
+            elementsBefore,
+            elementsAfter,
+            analysis
+        };
+    }
+    
+    /**
+     * Check delimiter balance
+     */
+    private checkDelimiterBalance(
+        before: StructuralElements,
+        after: StructuralElements,
+        warnings: StructuralWarning[]
+    ): void {
+        // Check braces
+        if (after.braces.open !== after.braces.close) {
+            warnings.push({
+                type: 'unbalanced_braces',
+                severity: 'high',
+                message: `Unbalanced braces: ${after.braces.open} open, ${after.braces.close} close`,
+                details: `Change from before: ${before.braces.open - before.braces.close} → ${after.braces.open - after.braces.close}`
+            });
+        }
+        
+        // Check parentheses
+        if (after.parentheses.open !== after.parentheses.close) {
+            warnings.push({
+                type: 'unbalanced_parentheses',
+                severity: 'high',
+                message: `Unbalanced parentheses: ${after.parentheses.open} open, ${after.parentheses.close} close`,
+                details: `Change from before: ${before.parentheses.open - before.parentheses.close} → ${after.parentheses.open - after.parentheses.close}`
+            });
+        }
+        
+        // Check brackets
+        if (after.brackets.open !== after.brackets.close) {
+            warnings.push({
+                type: 'unbalanced_brackets',
+                severity: 'high',
+                message: `Unbalanced brackets: ${after.brackets.open} open, ${after.brackets.close} close`,
+                details: `Change from before: ${before.brackets.open - before.brackets.close} → ${after.brackets.open - after.brackets.close}`
+            });
+        }
+        
+        // Check quotes (should be even)
+        if (after.singleQuotes % 2 !== 0) {
+            warnings.push({
+                type: 'unbalanced_quotes',
+                severity: 'medium',
+                message: `Odd number of single quotes: ${after.singleQuotes}`,
+                details: 'May indicate an unclosed string literal'
+            });
+        }
+        if (after.doubleQuotes % 2 !== 0) {
+            warnings.push({
+                type: 'unbalanced_quotes',
+                severity: 'medium',
+                message: `Odd number of double quotes: ${after.doubleQuotes}`,
+                details: 'May indicate an unclosed string literal'
+            });
+        }
+        if (after.backticks % 2 !== 0) {
+            warnings.push({
+                type: 'unbalanced_quotes',
+                severity: 'medium',
+                message: `Odd number of backticks: ${after.backticks}`,
+                details: 'May indicate an unclosed template literal'
+            });
+        }
+    }
+    
+    /**
+     * Check for unclosed elements
+     */
+    private checkUnclosedElements(elements: StructuralElements, warnings: StructuralWarning[]): void {
+        // Check for unclosed block comments
+        if (elements.blockComments.open > elements.blockComments.close) {
+            warnings.push({
+                type: 'unclosed_comment',
+                severity: 'high',
+                message: `Unclosed block comment detected`,
+                details: `${elements.blockComments.open} /* found but only ${elements.blockComments.close} */`
+            });
+        }
+    }
+    
+    /**
+     * Perform language-specific validation
+     */
+    private performLanguageSpecificValidation(
+        content: string,
+        fileExtension: string,
+        warnings: StructuralWarning[]
+    ): void {
+        switch (fileExtension) {
+            case 'json':
+                this.validateJSON(content, warnings);
+                break;
+            case 'ts':
+            case 'tsx':
+            case 'js':
+            case 'jsx':
+                this.validateJavaScriptTypeScript(content, warnings);
+                break;
+        }
+    }
+    
+    /**
+     * Validate JSON structure
+     */
+    private validateJSON(content: string, warnings: StructuralWarning[]): void {
+        try {
+            JSON.parse(content);
+        } catch (error) {
+            warnings.push({
+                type: 'json_invalid',
+                severity: 'high',
+                message: 'Invalid JSON structure',
+                details: error instanceof Error ? error.message : 'Unknown JSON parsing error'
+            });
+        }
+    }
+    
+    /**
+     * Basic validation for JavaScript/TypeScript
+     */
+    private validateJavaScriptTypeScript(content: string, warnings: StructuralWarning[]): void {
+        // Check for common syntax patterns that might indicate issues
+        const lines = content.split('\n');
+        
+        // Check for incomplete function declarations
+        const functionPattern = /^\s*(async\s+)?function\s+\w+\s*\([^)]*$/;
+        const arrowFunctionPattern = /^\s*(?:const|let|var)\s+\w+\s*=\s*(?:async\s*)?\([^)]*\)\s*=>\s*$/;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (functionPattern.test(line) || arrowFunctionPattern.test(line)) {
+                // Check if next line has opening brace
+                if (i + 1 < lines.length && !lines[i + 1].includes('{')) {
+                    warnings.push({
+                        type: 'syntax_error',
+                        severity: 'low',
+                        message: `Possible incomplete function declaration at line ${i + 1}`,
+                        details: 'Function declaration may be missing its body'
+                    });
+                }
+            }
+        }
+        
+        // Check for trailing commas in inappropriate places (very basic)
+        if (/,\s*}/.test(content) || /,\s*\]/.test(content)) {
+            // This is actually valid in modern JS/TS, so just a low severity note
+            warnings.push({
+                type: 'syntax_error',
+                severity: 'low',
+                message: 'Trailing commas detected',
+                details: 'While valid in modern JavaScript, ensure compatibility with your target environment'
+            });
+        }
+    }
+    
+    /**
+     * Generate analysis summary
+     */
+    private generateAnalysis(before: StructuralElements, after: StructuralElements): string {
+        const changes: string[] = [];
+        
+        // Compare delimiters
+        const braceChange = (after.braces.open - after.braces.close) - (before.braces.open - before.braces.close);
+        const parenChange = (after.parentheses.open - after.parentheses.close) - (before.parentheses.open - before.parentheses.close);
+        const bracketChange = (after.brackets.open - after.brackets.close) - (before.brackets.open - before.brackets.close);
+        
+        if (braceChange !== 0) {
+            changes.push(`Brace balance changed by ${braceChange > 0 ? '+' : ''}${braceChange}`);
+        }
+        if (parenChange !== 0) {
+            changes.push(`Parenthesis balance changed by ${parenChange > 0 ? '+' : ''}${parenChange}`);
+        }
+        if (bracketChange !== 0) {
+            changes.push(`Bracket balance changed by ${bracketChange > 0 ? '+' : ''}${bracketChange}`);
+        }
+        
+        // Quote changes
+        const singleQuoteChange = after.singleQuotes - before.singleQuotes;
+        const doubleQuoteChange = after.doubleQuotes - before.doubleQuotes;
+        const backtickChange = after.backticks - before.backticks;
+        
+        if (singleQuoteChange !== 0) {
+            changes.push(`Single quotes changed by ${singleQuoteChange > 0 ? '+' : ''}${singleQuoteChange}`);
+        }
+        if (doubleQuoteChange !== 0) {
+            changes.push(`Double quotes changed by ${doubleQuoteChange > 0 ? '+' : ''}${doubleQuoteChange}`);
+        }
+        if (backtickChange !== 0) {
+            changes.push(`Backticks changed by ${backtickChange > 0 ? '+' : ''}${backtickChange}`);
+        }
+        
+        if (changes.length === 0) {
+            return 'No structural changes detected';
+        }
+        
+        return 'Structural changes: ' + changes.join(', ');
     }
 }
 
@@ -780,21 +1394,11 @@ async function validateDiffSections(
     const workspaceFolder = vscode.workspace.workspaceFolders[0];
     const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
     
-    // Check if file exists
-    let fileExists = true;
-    let lines: string[] = [];
+    // Use cached content if available
+    const { lines } = await getCachedFileContent(fileUri);
+    const fileExists = lines.length > 0;
     
-    try {
-        await vscode.workspace.fs.stat(fileUri);
-        // Read the file content
-        const document = await vscode.workspace.openTextDocument(fileUri);
-        for (let i = 0; i < document.lineCount; i++) {
-            lines.push(document.lineAt(i).text);
-        }
-    } catch (error) {
-        // File doesn't exist - treat as empty file
-        fileExists = false;
-        lines = [];
+    if (!fileExists) {
         console.log(`[validateDiffSections] File ${filePath} does not exist. Treating as empty file for validation.`);
     }
 
@@ -864,14 +1468,30 @@ async function validateDiffSections(
         console.log(`[validateDiffSections] Processing diff ${i}: lines ${diff.startLine}-${diff.endLine}`);
 
         // Use hierarchical validation
+        const validationStart = Date.now();
         const validationResult = await validationHierarchy.executeHierarchy(
             matcher,
             lines,
             diff.search,
             diff.startLine
         );
+        const validationDuration = Date.now() - validationStart;
         
         const match = validationResult.match;
+        
+        // Track validation performance
+        StructuredLogger.trackOperation(
+            'validateDiffSections',
+            `diff_validation_${i}`,
+            match !== null,
+            validationDuration,
+            {
+                diffIndex: i,
+                strategy: match?.strategy || 'none',
+                confidence: match?.confidence || 0,
+                earlyTerminated: validationResult.earlyTerminated
+            }
+        );
         
         // Log validation attempts if no match found
         if (!match) {
@@ -971,9 +1591,10 @@ async function validateDiffSections(
 async function createModifiedContent(
     filePath: string,
     diffs: DiffSection[],
-    matches: MatchResult[]
+    matches: MatchResult[],
+    partialSuccess: boolean = false
 ): Promise<string> {
-    console.log(`[createModifiedContent] Creating modified content with ${diffs.length} diff sections`);
+    console.log(`[createModifiedContent] Creating modified content with ${diffs.length} diff sections (partial mode: ${partialSuccess})`);
     
     if (!vscode.workspace.workspaceFolders) {
         throw new Error('No workspace folder is open');
@@ -982,10 +1603,21 @@ async function createModifiedContent(
     const workspaceFolder = vscode.workspace.workspaceFolders[0];
     const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filePath);
     
-    // Get all lines from the file
+    // Get the original file content to preserve formatting
+    let originalText = '';
     let lines: string[] = [];
+    let lineEndings: string = '\n'; // Default line ending
+    
     try {
         const document = await vscode.workspace.openTextDocument(fileUri);
+        originalText = document.getText();
+        
+        // Detect line endings from original file
+        const crlfCount = (originalText.match(/\r\n/g) || []).length;
+        const lfCount = (originalText.match(/(?<!\r)\n/g) || []).length;
+        lineEndings = crlfCount > lfCount ? '\r\n' : '\n';
+        
+        // Get lines while preserving exact content
         for (let i = 0; i < document.lineCount; i++) {
             lines.push(document.lineAt(i).text);
         }
@@ -1000,31 +1632,70 @@ async function createModifiedContent(
 
     // Apply changes from bottom to top to avoid line number shifts
     // Exception: for new file insertions, apply top to bottom
-    const hasNewFileInserts = matches.some(m => m.strategy === 'new-file-insert');
-    const sortedChanges = matches
-        .map((match, index) => ({ match, diff: normalizedDiffs[index] }))
-        .sort((a, b) => hasNewFileInserts ? a.match.startLine - b.match.startLine : b.match.startLine - a.match.startLine);
+    const hasNewFileInserts = matches.some(m => m && m.strategy === 'new-file-insert');
+    
+    // In partial success mode, filter out null matches (failed validations)
+    const validChanges = matches
+        .map((match, index) => ({ match, diff: normalizedDiffs[index], index }))
+        .filter(item => item.match !== null);
+    
+    if (partialSuccess && validChanges.length < matches.length) {
+        console.log(`[createModifiedContent] Partial success: applying ${validChanges.length} of ${matches.length} diffs`);
+    }
+    
+    const sortedChanges = validChanges
+        .sort((a, b) => hasNewFileInserts ? a.match!.startLine - b.match!.startLine : b.match!.startLine - a.match!.startLine);
 
     for (const { match, diff } of sortedChanges) {
         console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
         
-        // Replace the matched lines with new content
-        const newLines = diff.replace.split('\n');
+        // Preserve indentation from the original matched content
+        let indentationToPreserve = '';
+        if (match.startLine < lines.length && lines[match.startLine]) {
+            // Extract leading whitespace from the first line being replaced
+            const leadingWhitespace = lines[match.startLine].match(/^\s*/);
+            if (leadingWhitespace) {
+                indentationToPreserve = leadingWhitespace[0];
+            }
+        }
+        
+        // Split replacement content preserving original line endings
+        const newLines = diff.replace.split(/\r?\n/);
+        
+        // Apply preserved indentation to new lines (except if it's already indented)
+        const indentedNewLines = newLines.map((line, index) => {
+            // Skip empty lines or lines that already have indentation
+            if (line === '' || line.match(/^\s/) || index === 0) {
+                return line;
+            }
+            // Check if original content had this line indented
+            const originalLineIndex = match.startLine + index;
+            if (originalLineIndex <= match.endLine && originalLineIndex < lines.length) {
+                const originalIndent = lines[originalLineIndex].match(/^\s*/);
+                if (originalIndent && originalIndent[0]) {
+                    // Use original line's indentation
+                    return originalIndent[0] + line.trimStart();
+                }
+            }
+            // Otherwise, use the indentation from the first line
+            return indentationToPreserve + line;
+        });
         
         // Special handling for new file insertions
         if (match.strategy === 'new-file-insert' && lines.length === 0) {
             // For empty files, just set the lines directly
-            lines = newLines;
+            lines = indentedNewLines;
         } else if (match.strategy === 'new-file-insert') {
             // For subsequent insertions in new files, append
-            lines.push(...newLines);
+            lines.push(...indentedNewLines);
         } else {
             // Normal replacement
-            lines.splice(match.startLine, match.endLine - match.startLine + 1, ...newLines);
+            lines.splice(match.startLine, match.endLine - match.startLine + 1, ...indentedNewLines);
         }
     }
 
-    return lines.join('\n');
+    // Join with detected line endings to preserve file format
+    return lines.join(lineEndings);
 }
 
 /**
@@ -1271,6 +1942,7 @@ async function applyDiffToFile(
  */
 export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
     console.log(`[applyDiff] Starting apply_diff for ${args.filePath} with ${args.diffs.length} diff sections`);
+    const operationStart = Date.now();
     
     if (!vscode.workspace.workspaceFolders) {
         throw new Error('No workspace folder is open');
@@ -1314,8 +1986,34 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
         // Validate diff sections
         const validation = await validateDiffSections(args.filePath, args.diffs);
         progress.report({ increment: 30, message: "Validation complete" });
-        if (!validation.isValid) {
-            // Find the first conflict with diagnostic info
+        
+        // Handle partial success mode
+        if (!validation.isValid && args.partialSuccess) {
+            // Check if we have any successful matches
+            const successfulMatches = validation.matches.filter(m => m !== null);
+            
+            if (successfulMatches.length > 0) {
+                console.log(`[applyDiff] Partial success mode: ${successfulMatches.length}/${args.diffs.length} diffs validated successfully`);
+                
+                // Log conflicts but continue with successful matches
+                validation.conflicts.forEach(c => {
+                    console.warn(`[applyDiff] Conflict in diff ${c.diffIndex1}: ${c.description}`);
+                });
+                
+                // Add warning about partial application
+                validation.warnings.push(
+                    `Partial success: ${successfulMatches.length} of ${args.diffs.length} diffs will be applied. ` +
+                    `${validation.conflicts.length} diffs failed validation.`
+                );
+            } else {
+                // No successful matches even in partial mode
+                throw new Error(
+                    `No diffs could be validated successfully for ${args.filePath}. ` +
+                    `Even in partial success mode, at least one diff must be valid.`
+                );
+            }
+        } else if (!validation.isValid) {
+            // Normal mode - fail on any validation error
             const conflictWithDiagnostic = validation.conflicts.find(c => 
                 (c as any).diagnostic !== undefined
             ) as (ConflictInfo & { diagnostic: DiagnosticInfo }) | undefined;
@@ -1347,17 +2045,38 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
             originalContent = '';
         }
         
-        const modifiedContent = await createModifiedContent(args.filePath, args.diffs, validation.matches);
+        const modifiedContent = await createModifiedContent(args.filePath, args.diffs, validation.matches, args.partialSuccess);
         progress.report({ increment: 20, message: "Changes prepared" });
         
+        // Perform structural integrity validation
+        progress.report({ increment: 5, message: "Validating structural integrity..." });
+        const structuralValidator = new StructuralValidator();
+        const structuralValidation = structuralValidator.validateStructure(
+            originalContent,
+            modifiedContent,
+            args.filePath
+        );
+        
+        // Add structural warnings to existing warnings
+        const allWarnings = [
+            ...validation.warnings,
+            ...structuralValidation.warnings.map(w => `[${w.severity.toUpperCase()}] ${w.message}${w.details ? ': ' + w.details : ''}`)
+        ];
+        
+        // Log structural analysis
+        console.log(`[applyDiff] Structural analysis: ${structuralValidation.analysis}`);
+        if (structuralValidation.warnings.length > 0) {
+            console.log(`[applyDiff] Structural warnings:`, structuralValidation.warnings);
+        }
+        
         // Show diff and get user approval
-        progress.report({ increment: 10, message: "Showing diff preview..." });
+        progress.report({ increment: 5, message: "Showing diff preview..." });
         const approved = await showDiffAndGetApproval(
             args.filePath,
             originalContent,
             modifiedContent,
             args.description || 'Apply diff changes',
-            validation.warnings
+            allWarnings
         );
         
         if (!approved) {
@@ -1371,7 +2090,31 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
         
         progress.report({ increment: 10, message: "Changes applied successfully!" });
         
-        console.log(`[applyDiff] Successfully applied diff to ${args.filePath}`);
+        const totalDuration = Date.now() - operationStart;
+        console.log(`[applyDiff] Successfully applied diff to ${args.filePath} in ${totalDuration}ms`);
+        
+        // Track overall operation success
+        StructuredLogger.trackOperation(
+            'applyDiff',
+            'apply_diff_complete',
+            true,
+            totalDuration,
+            {
+                filePath: args.filePath,
+                diffsCount: args.diffs.length,
+                partialSuccess: args.partialSuccess || false,
+                warningsCount: allWarnings.length
+            }
+        );
+        
+        // Log performance metrics periodically
+        const metrics = StructuredLogger.getPerformanceMetrics('applyDiff');
+        if (metrics.count % 10 === 0) {
+            console.log(`[applyDiff] Performance metrics after ${metrics.count} operations:`, {
+                avgDuration: `${metrics.avgDuration.toFixed(2)}ms`,
+                successRate: `${metrics.successRate.toFixed(1)}%`
+            });
+        }
     });
 }
 
@@ -1615,8 +2358,9 @@ export function registerEditTools(server: McpServer): void {
         - Automatic file creation if file doesn't exist
         - Fuzzy matching handles whitespace differences, content drift, and formatting variations
         - Shows unified diff preview before applying changes
-        - Atomic all-or-nothing application
+        - Atomic all-or-nothing application (or partial success mode)
         - Backward compatible with originalContent/newContent parameters
+        - Partial success mode: apply successful diffs even if some fail
         
         Best Practices:
         - Use for related changes that should be applied together
@@ -1650,13 +2394,14 @@ export function registerEditTools(server: McpServer): void {
                 return hasSearch && hasReplace;
             }, {
                 message: "Either 'search' or 'originalContent' must be provided, and either 'replace' or 'newContent' must be provided"
-            })).describe('Array of diff sections to apply')
+            })).describe('Array of diff sections to apply'),
+            partialSuccess: z.boolean().optional().default(false).describe('Whether to apply successful diffs even if some fail')
         },
-        async ({ filePath, diffs, description }): Promise<CallToolResult> => {
-            console.log(`[apply_diff] Tool called with filePath=${filePath}, ${diffs.length} diff sections`);
+        async ({ filePath, diffs, description, partialSuccess }): Promise<CallToolResult> => {
+            console.log(`[apply_diff] Tool called with filePath=${filePath}, ${diffs.length} diff sections, partialSuccess=${partialSuccess}`);
             
             try {
-                await applyDiff({ filePath, diffs, description });
+                await applyDiff({ filePath, diffs, description, partialSuccess });
                 
                 const sectionsText = diffs.length === 1 ? 'section' : 'sections';
                 const result: CallToolResult = {
