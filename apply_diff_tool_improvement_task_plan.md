@@ -21,7 +21,7 @@ Transform the `apply_diff` tool into a highly reliable, production-ready code ed
 
 #### 1.1 Update Parameter Schema
 - [ ] Change `originalContent` → `search`
-- [ ] Change `newContent` → `replace` 
+- [ ] Change `newContent` → `replace`
 - [ ] Reorder parameters: `filePath`, `description`, `startLine`, `endLine`, `search`, `replace`
 - [ ] Update TypeScript interfaces (`DiffSection`, `ApplyDiffArgs`)
 - [ ] Update Zod validation schema in tool registration

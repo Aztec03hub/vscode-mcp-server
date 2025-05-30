@@ -41,7 +41,7 @@ node out/test/integration-test-runner.js cleanup
 }
 ```
 
-**Expected Result:** 
+**Expected Result:**
 - VS Code diff viewer should open
 - Shows change from `= 0;` to `= 100;`
 - User approval dialog appears
