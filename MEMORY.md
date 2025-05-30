@@ -251,6 +251,20 @@ This sequence:
    npm run compile && vsce package && code --install-extension vscode-mcp-server-0.0.4.vsix --force && code -r .
    ```
 
+## Test Infrastructure Fixes
+
+### Test File Creation Pattern
+When writing tests that create and modify files, always use a helper function to ensure clean state:
+```typescript
+async function createTestFile(content: string) {
+    await vscode.workspace.fs.writeFile(testFileUri, Buffer.from(content));
+    await new Promise(resolve => setTimeout(resolve, 50)); // Give VS Code time to process
+}
+```
+
+**Issue**: Tests were failing because files weren't being reset between tests
+**Solution**: Create fresh file content before each test using the helper function
+
 ## Whitespace Preservation Implementation (Task 6.1)
 
 ### Key Features
