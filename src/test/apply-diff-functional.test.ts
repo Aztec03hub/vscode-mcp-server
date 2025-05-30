@@ -296,6 +296,9 @@ suite('Apply Diff Functional Tests', () => {
                     ]
                 });
 
+                // Wait for file to be written
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
                 // Clear cache again before second operation
                 clearFileCache(fileUri);
 
@@ -319,6 +322,9 @@ suite('Apply Diff Functional Tests', () => {
                     ]
                 });
 
+                // Wait for all file operations to complete
+                await new Promise(resolve => setTimeout(resolve, 200));
+                
                 const content = fs.readFileSync(testFile, 'utf8');
                 assert.ok(content.includes('import { Component }'), 'Should have import statement');
                 assert.ok(content.includes('@Component'), 'Should have decorator');

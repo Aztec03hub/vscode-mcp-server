@@ -1,4 +1,4 @@
-import { suite, test, before, after } from 'mocha';
+import { suite, test, before, after, afterEach } from 'mocha';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -56,6 +56,17 @@ suite('Edge Cases Tests', () => {
         });
         
         // testFileUri will be set in createTestFile
+    });
+    
+    afterEach(async () => {
+        // Ensure clean state between tests
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Clear any cached content
+        if (testFileUri) {
+            clearFileCache(testFileUri);
+        }
     });
     
     after(async () => {
