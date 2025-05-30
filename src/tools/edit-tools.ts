@@ -1706,7 +1706,8 @@ async function showDiffAndGetApproval(
     originalContent: string,
     modifiedContent: string,
     description: string,
-    warnings: string[]
+    warnings: string[],
+    matchResults?: MatchResult[]
 ): Promise<boolean> {
     console.log(`[showDiffAndGetApproval] Showing diff for ${filePath}`);
     
@@ -1742,6 +1743,7 @@ async function showDiffAndGetApproval(
     let approveButton: vscode.StatusBarItem | undefined;
     let rejectButton: vscode.StatusBarItem | undefined;
     let infoButton: vscode.StatusBarItem | undefined;
+    let confidenceButton: vscode.StatusBarItem | undefined;
     
     // Commands for approval actions
     let approveCommand: vscode.Disposable | undefined;
@@ -1796,6 +1798,45 @@ async function showDiffAndGetApproval(
             : `Creating new file: ${filePath}`;
         infoButton.show();
         
+        // Add confidence display button if match results are available
+        if (matchResults && matchResults.length > 0) {
+            confidenceButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 997);
+            
+            // Calculate average confidence and format display
+            const validMatches = matchResults.filter(m => m !== null);
+            const avgConfidence = validMatches.reduce((sum, m) => sum + m.confidence, 0) / validMatches.length;
+            const confidencePercent = (avgConfidence * 100).toFixed(1);
+            
+            // Determine confidence icon based on level
+            let confidenceIcon = '$(check-all)'; // High confidence
+            if (avgConfidence < 0.9) {
+                confidenceIcon = '$(warning)'; // Medium confidence
+            }
+            if (avgConfidence < 0.8) {
+                confidenceIcon = '$(alert)'; // Low confidence
+            }
+            
+            confidenceButton.text = `${confidenceIcon} Match Confidence: ${confidencePercent}%`;
+            
+            // Build detailed tooltip
+            const tooltipLines = ['Match Confidence Details:\n'];
+            matchResults.forEach((match, index) => {
+                if (match) {
+                    const percent = (match.confidence * 100).toFixed(1);
+                    const strategy = match.strategy.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    tooltipLines.push(`Diff ${index + 1}: ${percent}% (${strategy})`);
+                    if (match.issues && match.issues.length > 0) {
+                        match.issues.forEach(issue => tooltipLines.push(`  - ${issue}`));
+                    }
+                } else {
+                    tooltipLines.push(`Diff ${index + 1}: Failed to match`);
+                }
+            });
+            
+            confidenceButton.tooltip = tooltipLines.join('\n');
+            confidenceButton.show();
+        }
+        
         // Show warnings if any
         if (warnings.length > 0) {
             vscode.window.showWarningMessage(
@@ -1847,6 +1888,7 @@ async function showDiffAndGetApproval(
             approveButton?.dispose();
             rejectButton?.dispose();
             infoButton?.dispose();
+            confidenceButton?.dispose();
             approveCommand?.dispose();
             rejectCommand?.dispose();
         } catch (error) {
@@ -2076,7 +2118,8 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
             originalContent,
             modifiedContent,
             args.description || 'Apply diff changes',
-            allWarnings
+            allWarnings,
+            validation.matches
         );
         
         if (!approved) {

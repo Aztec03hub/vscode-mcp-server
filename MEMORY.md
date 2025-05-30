@@ -122,6 +122,34 @@ const approveCommandId = `mcp.apply-diff.approve.${commandId}`;
 - **Medium**: Odd number of quotes (possible unclosed string)
 - **Low**: Style issues like trailing commas, incomplete function declarations
 
+## Task 8: User Experience Improvements (Completed)
+
+### Match Confidence Display Implementation
+
+#### Key Features
+1. **Status Bar Button**: Displays average match confidence with icon
+   - Green check ($(check-all)) for high confidence (≥90%)
+   - Yellow warning ($(warning)) for medium confidence (80-90%)
+   - Orange alert ($(alert)) for low confidence (<80%)
+
+2. **Detailed Tooltip**: Shows per-diff confidence details
+   - Individual confidence percentages for each diff
+   - Strategy used for matching (formatted for readability)
+   - Any issues encountered during matching
+   - Clear indication of failed matches
+
+3. **Integration Points**
+   - Added `matchResults` parameter to `showDiffAndGetApproval`
+   - Passed validation matches from `applyDiff` function
+   - Proper cleanup of UI elements in finally block
+
+### Implementation Details
+- Confidence button appears at priority 997 (after other buttons)
+- Only shown when match results are available
+- Calculates average confidence from all valid matches
+- Tooltips use newline characters for multi-line display
+- Strategy names are formatted from kebab-case to Title Case
+
 ## Whitespace Preservation Implementation (Task 6.1)
 
 ### Key Features

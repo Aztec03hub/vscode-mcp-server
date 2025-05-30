@@ -40,7 +40,7 @@ npx vsce package
 
 This creates `vscode-mcp-server-0.0.4.vsix` in the project root.
 
-**✅ Expected Output:** 
+**✅ Expected Output:**
 ```
 DONE Packaged: C:\Users\plafayette\workspace\github_projects\vscode-mcp-server\vscode-mcp-server-0.0.4.vsix (6800 files, 13.62 MB)
 ```
@@ -129,7 +129,7 @@ Test files created in: C:\Users\plafayette\workspace\github_projects\vscode-mcp-
 
 The new extension should register these tools:
 - `create_file_code`
-- `replace_lines_code` 
+- `replace_lines_code`
 - **`apply_diff`** ← New tool!
 
 You can verify this by checking your MCP client's available tools list.
