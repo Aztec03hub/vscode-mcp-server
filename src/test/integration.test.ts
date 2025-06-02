@@ -364,6 +364,7 @@ function three() { return 3; }`;
         await createProjectFile(errorTestFile, originalContent);
         
         // Apply mix of valid and invalid changes with partial success
+        // Use non-overlapping line numbers and more distinct search patterns
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
             filePath: path.join(testProjectDir, errorTestFile),
             partialSuccess: true,
@@ -375,10 +376,10 @@ function three() { return 3; }`;
                     replace: 'const one = () => 1;'
                 },
                 {
-                    startLine: 1,
-                    endLine: 1,
-                    search: 'function invalid() { return 0; }',  // This doesn't exist
-                    replace: 'const invalid = () => 0;'
+                    startLine: 5,  // Use a line number that definitely doesn't exist
+                    endLine: 5,
+                    search: 'function nonexistent() { return 999; }',  // This definitely doesn't exist
+                    replace: 'const shouldNotAppear = () => 999;'
                 },
                 {
                     startLine: 2,
@@ -396,15 +397,13 @@ function three() { return 3; }`;
         const content = await vscode.workspace.fs.readFile(errorTestUri);
         const text = Buffer.from(content).toString('utf8');
         
-        // In partial success mode, at least one change should be applied
-        // The second diff should fail (content doesn't exist)
-        // First and third diffs should succeed
-        assert.ok(
-            text.includes('const one = () => 1;') || 
-            text.includes('const three = () => 3;'),
-            `At least one valid change should be applied. Got: ${text}`
-        );
-        assert.ok(text.includes('function two() { return 2; }'), 'Unchanged line preserved');
-        assert.ok(!text.includes('invalid'), 'Invalid change not applied');
+        // In partial success mode, valid changes should be applied
+        assert.ok(text.includes('const one = () => 1;'), 'First valid change should be applied');
+        assert.ok(text.includes('function two() { return 2; }'), 'Unchanged line should be preserved');
+        assert.ok(text.includes('const three = () => 3;'), 'Third valid change should be applied');
+        
+        // The invalid change should NOT be applied
+        assert.ok(!text.includes('shouldNotAppear'), 'Invalid change should not be applied');
+        assert.ok(!text.includes('999'), 'Invalid replacement content should not appear');
     });
 });
