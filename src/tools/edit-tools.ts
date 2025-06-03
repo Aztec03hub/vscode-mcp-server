@@ -55,7 +55,7 @@ interface MatchResult {
 
 interface ValidationResult {
     isValid: boolean;
-    matches: MatchResult[];
+    matches: (MatchResult | null)[];
     conflicts: ConflictInfo[];
     warnings: string[];
     suggestions: string[];
@@ -1403,7 +1403,7 @@ async function validateDiffSections(
     }
 
     const matcher = new ContentMatcher();
-    const matches: MatchResult[] = [];
+    const matches: (MatchResult | null)[] = [];
     const conflicts: ConflictInfo[] = [];
     const warnings: string[] = [];
     const suggestions: string[] = [];
@@ -1519,10 +1519,13 @@ async function validateDiffSections(
             }
             
             // Add warnings for low confidence matches
-            if (matcher.requiresUserConfirmation(match)) {
+            if (match.confidence < 0.9) {
                 warnings.push(`Diff ${i} found with ${match.strategy} strategy (confidence: ${match.confidence.toFixed(2)})`);
             }
         } else {
+            // No match found - push null to maintain index alignment
+            matches.push(null);
+            
             // Collect diagnostic information
             const diagnostic: DiagnosticInfo = {
                 expected: diff.search,
@@ -1530,7 +1533,7 @@ async function validateDiffSections(
                 searchLocations: [],
                 attempts: validationResult.attempts
             };
-            
+
             // Find best partial matches for diagnostic
             const partialMatches: MatchResult[] = [];
             for (const attempt of validationResult.attempts) {
@@ -1538,7 +1541,7 @@ async function validateDiffSections(
                     partialMatches.push(attempt.result);
                 }
             }
-            
+
             if (partialMatches.length > 0) {
                 const best = partialMatches[0];
                 diagnostic.bestMatch = {
@@ -1548,14 +1551,14 @@ async function validateDiffSections(
                     strategy: best.strategy
                 };
             }
-            
+
             // Collect actual content at hint location
             if (diff.startLine < lines.length) {
                 const endLine = Math.min(diff.endLine, lines.length - 1);
                 diagnostic.actualContent.push(lines.slice(diff.startLine, endLine + 1).join('\n'));
                 diagnostic.searchLocations.push(diff.startLine);
             }
-            
+
             conflicts.push({
                 type: 'content_mismatch',
                 diffIndex1: i,
@@ -1591,7 +1594,7 @@ async function validateDiffSections(
 async function createModifiedContent(
     filePath: string,
     diffs: DiffSection[],
-    matches: MatchResult[],
+    matches: (MatchResult | null)[],
     partialSuccess: boolean = false
 ): Promise<string> {
     console.log(`[createModifiedContent] Creating modified content with ${diffs.length} diff sections (partial mode: ${partialSuccess})`);
@@ -1637,14 +1640,14 @@ async function createModifiedContent(
     // In partial success mode, filter out null matches (failed validations)
     const validChanges = matches
         .map((match, index) => ({ match, diff: normalizedDiffs[index], index }))
-        .filter(item => item.match !== null);
+        .filter((item): item is { match: MatchResult; diff: NormalizedDiffSection; index: number } => item.match !== null);
     
     if (partialSuccess && validChanges.length < matches.length) {
         console.log(`[createModifiedContent] Partial success: applying ${validChanges.length} of ${matches.length} diffs`);
     }
     
     const sortedChanges = validChanges
-        .sort((a, b) => hasNewFileInserts ? a.match!.startLine - b.match!.startLine : b.match!.startLine - a.match!.startLine);
+        .sort((a, b) => hasNewFileInserts ? a.match.startLine - b.match.startLine : b.match.startLine - a.match.startLine);
 
     for (const { match, diff } of sortedChanges) {
         console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
@@ -1707,7 +1710,7 @@ async function showDiffAndGetApproval(
     modifiedContent: string,
     description: string,
     warnings: string[],
-    matchResults?: MatchResult[]
+    matchResults?: (MatchResult | null)[]
 ): Promise<boolean> {
     console.log(`[showDiffAndGetApproval] Showing diff for ${filePath}`);
     
@@ -2045,19 +2048,81 @@ export async function applyDiff(args: ApplyDiffArgs): Promise<void> {
             // Check if we have any successful matches
             const successfulMatches = validation.matches.filter(m => m !== null);
             
-            if (successfulMatches.length > 0) {
-                console.log(`[applyDiff] Partial success mode: ${successfulMatches.length}/${args.diffs.length} diffs validated successfully`);
+            if (args.partialSuccess) {
+                // In partial success mode, resolve conflicts by preferring higher confidence matches
+                const conflictResolutions = new Map<number, boolean>(); // diffIndex -> shouldExclude
                 
-                // Log conflicts but continue with successful matches
+                // Process each conflict and decide which diff to keep
                 validation.conflicts.forEach(c => {
-                    console.warn(`[applyDiff] Conflict in diff ${c.diffIndex1}: ${c.description}`);
+                    const match1 = validation.matches[c.diffIndex1];
+                    const match2 = c.diffIndex2 !== undefined ? validation.matches[c.diffIndex2] : null;
+                    
+                    if (match1 && match2) {
+                        // Both matches exist - prefer the one with higher confidence
+                        if (match1.confidence > match2.confidence) {
+                            console.log(`[applyDiff] Conflict resolution: Keeping diff ${c.diffIndex1} (confidence ${match1.confidence.toFixed(2)}) over diff ${c.diffIndex2} (confidence ${match2.confidence.toFixed(2)})`);
+                            if (c.diffIndex2 !== undefined) {
+                                conflictResolutions.set(c.diffIndex2, true); // Exclude the lower confidence one
+                            }
+                        } else if (match2.confidence > match1.confidence) {
+                            console.log(`[applyDiff] Conflict resolution: Keeping diff ${c.diffIndex2} (confidence ${match2.confidence.toFixed(2)}) over diff ${c.diffIndex1} (confidence ${match1.confidence.toFixed(2)})`);
+                            conflictResolutions.set(c.diffIndex1, true); // Exclude the lower confidence one
+                        } else {
+                            // Equal confidence - prefer the first one (original behavior)
+                            console.log(`[applyDiff] Conflict resolution: Keeping diff ${c.diffIndex1} over diff ${c.diffIndex2} (equal confidence ${match1.confidence.toFixed(2)})`);
+                            if (c.diffIndex2 !== undefined) {
+                                conflictResolutions.set(c.diffIndex2, true);
+                            }
+                        }
+                    } else if (match1 && !match2) {
+                        // Only first match exists - exclude the second
+                        if (c.diffIndex2 !== undefined) {
+                            conflictResolutions.set(c.diffIndex2, true);
+                        }
+                    } else if (!match1 && match2) {
+                        // Only second match exists - exclude the first
+                        conflictResolutions.set(c.diffIndex1, true);
+                    } else {
+                        // Neither match exists - exclude both
+                        conflictResolutions.set(c.diffIndex1, true);
+                        if (c.diffIndex2 !== undefined) {
+                            conflictResolutions.set(c.diffIndex2, true);
+                        }
+                    }
                 });
-                
+
+                // Apply the exclusions
+                for (let i = 0; i < validation.matches.length; i++) {
+                    if (validation.matches[i] && conflictResolutions.get(i)) {
+                        console.warn(`[applyDiff] Excluding diff ${i} due to conflict resolution`);
+                        validation.matches[i] = null;
+                    }
+                }
+
+                const finalSuccessfulCount = validation.matches.filter(m => m !== null).length;
+
+                console.log(`[applyDiff] Partial success mode: ${finalSuccessfulCount}/${args.diffs.length} diffs will be applied after conflict resolution`);
+
+                // Log conflicts
+                validation.conflicts.forEach(c => {
+                    console.warn(`[applyDiff] Conflict: ${c.description}`);
+                });
+
                 // Add warning about partial application
                 validation.warnings.push(
-                    `Partial success: ${successfulMatches.length} of ${args.diffs.length} diffs will be applied. ` +
-                    `${validation.conflicts.length} diffs failed validation.`
+                    `Partial success: ${finalSuccessfulCount} of ${args.diffs.length} diffs will be applied. ` +
+                    `${conflictResolutions.size} diffs excluded due to conflicts.`
                 );
+
+                if (finalSuccessfulCount === 0) {
+                    // No successful matches after filtering conflicts
+                    const error = new ApplyDiffError(
+                        `No diffs could be applied successfully for ${args.filePath}. ` +
+                        `All ${successfulMatches.length} validated diffs were excluded due to conflicts.`,
+                        {} as DiagnosticInfo,
+                        ErrorLevel.SIMPLE
+                    );
+                }
             } else {
                 // No successful matches even in partial mode
                 throw new Error(

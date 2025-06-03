@@ -364,7 +364,7 @@ function three() { return 3; }`;
         await createProjectFile(errorTestFile, originalContent);
         
         // Apply mix of valid and invalid changes with partial success
-        // Use non-overlapping line numbers and more distinct search patterns
+        // Important: Make sure the search patterns are unique enough to avoid false matches
         const result = await vscode.commands.executeCommand('mcp.applyDiff', {
             filePath: path.join(testProjectDir, errorTestFile),
             partialSuccess: true,
@@ -376,9 +376,9 @@ function three() { return 3; }`;
                     replace: 'const one = () => 1;'
                 },
                 {
-                    startLine: 5,  // Use a line number that definitely doesn't exist
-                    endLine: 5,
-                    search: 'function nonexistent() { return 999; }',  // This definitely doesn't exist
+                    startLine: 1,
+                    endLine: 1,
+                    search: 'function nonexistent() { return 999; }',  // This doesn't exist
                     replace: 'const shouldNotAppear = () => 999;'
                 },
                 {
