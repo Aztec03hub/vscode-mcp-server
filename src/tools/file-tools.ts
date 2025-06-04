@@ -11,7 +11,7 @@ export type FileListingResult = Array<{path: string, type: 'file' | 'directory'}
 export type FileListingCallback = (path: string, recursive: boolean) => Promise<FileListingResult>;
 
 // Default maximum character count
-const DEFAULT_MAX_CHARACTERS = 100000;
+const DEFAULT_MAX_CHARACTERS = 200000;
 
 /**
  * Lists files and directories in the VS Code workspace
@@ -222,7 +222,7 @@ export function registerFileTools(
 
         Key features:
         - Returns text content with optional encoding support (default: utf-8)
-        - Enforces character limit (default: 100,000) to prevent loading large files
+        - Enforces character limit (default: 200,000) to prevent loading large files
         - Supports partial file reading using line numbers (startLine and endLine)
         
         Use cases:
@@ -237,7 +237,7 @@ export function registerFileTools(
         {
             path: z.string().describe('The path to the file to read'),
             encoding: z.string().optional().default('utf-8').describe('Optional encoding to convert the file content to a string'),
-            maxCharacters: z.number().optional().default(DEFAULT_MAX_CHARACTERS).describe('Maximum character count (default: 100,000)'),
+            maxCharacters: z.number().optional().default(DEFAULT_MAX_CHARACTERS).describe('Maximum character count (default: 200,000)'),
             startLine: z.number().optional().default(-1).describe('The start line number (0-based, inclusive). Default: read from beginning, denoted by -1'),
             endLine: z.number().optional().default(-1).describe('The end line number (0-based, inclusive). Default: read to end, denoted by -1')
         },
