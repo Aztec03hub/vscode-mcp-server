@@ -18,6 +18,8 @@ let autoApprovalStatusBar: vscode.StatusBarItem | undefined;
 // Shell auto-approval mode - DANGEROUS when enabled
 let shellAutoApprovalEnabled: boolean = false;
 let shellAutoApprovalStatusBar: vscode.StatusBarItem | undefined;
+// Main menu button for consolidated UI
+let mainMenuButton: vscode.StatusBarItem | undefined;
 
 // Terminal name constant
 const TERMINAL_NAME = 'MCP Shell Commands';
@@ -182,6 +184,34 @@ function updateAutoApprovalStatusBar() {
     }
 }
 
+// Function to update main menu button
+function updateMainMenuButton() {
+    if (!mainMenuButton) {
+        return;
+    }
+    
+    // Show server status in the button
+    if (serverEnabled) {
+        mainMenuButton.text = '$(server-process) MCP Server';
+        mainMenuButton.backgroundColor = undefined;
+    } else {
+        mainMenuButton.text = '$(server) MCP Server';
+        mainMenuButton.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+    }
+    
+    // Show warning if any auto-approval is enabled
+    if (autoApprovalEnabled || shellAutoApprovalEnabled) {
+        mainMenuButton.text += ' $(warning)';
+    }
+    
+    // Update tooltip with current status
+    const tooltipLines = ['VS Code MCP Server Menu (Click to open)'];
+    tooltipLines.push(`Server: ${serverEnabled ? 'Running' : 'Stopped'}`);
+    tooltipLines.push(`Auto-Approve Diff: ${autoApprovalEnabled ? 'ON' : 'OFF'}`);
+    tooltipLines.push(`Auto-Approve Shell: ${shellAutoApprovalEnabled ? 'ON ⚠️' : 'OFF'}`);
+    mainMenuButton.tooltip = tooltipLines.join('\n');
+}
+
 // Function to update shell auto-approval status bar
 function updateShellAutoApprovalStatusBar() {
     if (!shellAutoApprovalStatusBar) {
@@ -208,6 +238,7 @@ async function toggleAutoApproval(context: vscode.ExtensionContext) {
     
     // Update status bar
     updateAutoApprovalStatusBar();
+    updateMainMenuButton();
     
     // Show warning when enabling
     if (autoApprovalEnabled) {
@@ -237,6 +268,7 @@ async function toggleShellAutoApproval(context: vscode.ExtensionContext) {
     
     // Update status bar
     updateShellAutoApprovalStatusBar();
+    updateMainMenuButton();
     
     // Show strong warning when enabling
     if (shellAutoApprovalEnabled) {
@@ -292,6 +324,73 @@ export function isShellAutoApprovalEnabled(): boolean {
     return shellAutoApprovalEnabled;
 }
 
+/**
+ * Shows the main menu using QuickPick styled to look like GitHub Copilot menu
+ */
+async function showMainMenu(context: vscode.ExtensionContext): Promise<void> {
+    const config = vscode.workspace.getConfiguration('vscode-mcp-server');
+    const port = config.get<number>('port') || 3000;
+    
+    // Create menu items with icons and descriptions
+    const items: vscode.QuickPickItem[] = [
+        {
+            label: `$(server) MCP Server: ${serverEnabled ? `Port ${port}` : 'Off'}`,
+            description: serverEnabled ? 'Click to disable' : 'Click to enable',
+            detail: serverEnabled ? `Running at http://localhost:${port}/mcp` : 'Server is currently disabled'
+        },
+        {
+            label: `$(pass-filled) Auto-Approve (Diff): ${autoApprovalEnabled ? 'ON' : 'OFF'}`,
+            description: 'Toggle automatic approval for diff operations',
+            detail: autoApprovalEnabled ? '⚠️ Diffs will apply automatically' : 'Diffs require manual approval'
+        },
+        {
+            label: `$(shield) Auto-Approve (Shell): ${shellAutoApprovalEnabled ? 'ON' : 'OFF'}`,
+            description: 'Toggle automatic approval for shell commands',
+            detail: shellAutoApprovalEnabled ? '🚨 DANGEROUS: Destructive commands will execute!' : 'Destructive commands require approval'
+        },
+        {
+            label: '$(info) Show Server Info',
+            description: 'Display current server information',
+            detail: 'Shows server URL and status'
+        },
+        {
+            label: '$(gear) Extension Settings',
+            description: 'Open VS Code settings for this extension',
+            detail: 'Configure port and other options'
+        }
+    ];
+    
+    const quickPick = vscode.window.createQuickPick();
+    quickPick.title = 'VS Code MCP Server';
+    quickPick.placeholder = 'Select an option';
+    quickPick.items = items;
+    quickPick.matchOnDetail = true;
+    quickPick.matchOnDescription = true;
+    
+    quickPick.onDidChangeSelection(async selection => {
+        if (selection[0]) {
+            const selected = selection[0].label;
+            
+            if (selected.includes('MCP Server:')) {
+                await toggleServerState(context);
+            } else if (selected.includes('Auto-Approve (Diff)')) {
+                await toggleAutoApproval(context);
+            } else if (selected.includes('Auto-Approve (Shell)')) {
+                await toggleShellAutoApproval(context);
+            } else if (selected.includes('Show Server Info')) {
+                vscode.commands.executeCommand('vscode-mcp-server.showServerInfo');
+            } else if (selected.includes('Extension Settings')) {
+                vscode.commands.executeCommand('workbench.action.openSettings', 'vscode-mcp-server');
+            }
+            
+            quickPick.hide();
+        }
+    });
+    
+    quickPick.onDidHide(() => quickPick.dispose());
+    quickPick.show();
+}
+
 // Export function for shell tools to request command approval
 export async function requestShellCommandApproval(command: string, warning: string): Promise<boolean> {
     if (!shellApprovalManager) {
@@ -331,6 +430,7 @@ async function toggleServerState(context: vscode.ExtensionContext): Promise<void
     
     // Update status bar immediately to provide feedback
     updateStatusBar(port);
+    updateMainMenuButton();
     
     if (serverEnabled) {
         // Start the server if it was disabled
@@ -411,32 +511,43 @@ export async function activate(context: vscode.ExtensionContext) {
         // Initialize the shell approval manager
         shellApprovalManager = new ShellApprovalManager();
 
-        // Create server status bar item
-        statusBarItem = vscode.window.createStatusBarItem(
+        // Create main menu button (replacing individual status bars)
+        mainMenuButton = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             100
         );
-        statusBarItem.command = 'vscode-mcp-server.toggleServer';
-        statusBarItem.show();
-        updateStatusBar(port);
+        mainMenuButton.command = 'vscode-mcp-server.showMainMenu';
+        mainMenuButton.text = '$(gear) MCP Server';
+        mainMenuButton.tooltip = 'VS Code MCP Server Menu';
+        mainMenuButton.show();
+        updateMainMenuButton(); // Set initial state
+        context.subscriptions.push(mainMenuButton);
         
-        // Create auto-approval status bar item
-        autoApprovalStatusBar = vscode.window.createStatusBarItem(
+        // Still create the individual status bars but don't show them
+        // (They're used for state management and by other functions)
+        statusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             99
         );
+        statusBarItem.command = 'vscode-mcp-server.toggleServer';
+        // Don't show: statusBarItem.show();
+        updateStatusBar(port);
+        
+        autoApprovalStatusBar = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            98
+        );
         autoApprovalStatusBar.command = 'vscode-mcp-server.toggleAutoApproval';
-        autoApprovalStatusBar.show();
+        // Don't show: autoApprovalStatusBar.show();
         updateAutoApprovalStatusBar();
         context.subscriptions.push(autoApprovalStatusBar);
         
-        // Create shell auto-approval status bar item
         shellAutoApprovalStatusBar = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
-            98  // Priority next to other status bars
+            97
         );
         shellAutoApprovalStatusBar.command = 'vscode-mcp-server.toggleShellAutoApproval';
-        shellAutoApprovalStatusBar.show();
+        // Don't show: shellAutoApprovalStatusBar.show();
         updateShellAutoApprovalStatusBar();
         context.subscriptions.push(shellAutoApprovalStatusBar);
         
@@ -471,6 +582,11 @@ export async function activate(context: vscode.ExtensionContext) {
         updateStatusBar(port);
 
         // Register commands
+        const showMainMenuCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.showMainMenu',
+            () => showMainMenu(context)
+        );
+        
         const toggleServerCommand = vscode.commands.registerCommand(
             'vscode-mcp-server.toggleServer', 
             () => toggleServerState(context)
@@ -555,6 +671,7 @@ export async function activate(context: vscode.ExtensionContext) {
         // Add all disposables to the context subscriptions
         context.subscriptions.push(
             statusBarItem,
+            showMainMenuCommand,
             toggleServerCommand,
             showServerInfoCommand,
             toggleAutoApprovalCommand,
@@ -573,6 +690,11 @@ export async function activate(context: vscode.ExtensionContext) {
 }
 
 export async function deactivate() {
+    if (mainMenuButton) {
+        mainMenuButton.dispose();
+        mainMenuButton = undefined;
+    }
+    
     if (statusBarItem) {
         statusBarItem.dispose();
         statusBarItem = undefined;

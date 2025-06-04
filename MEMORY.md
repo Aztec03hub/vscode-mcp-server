@@ -426,6 +426,66 @@ Shell commands are timing out after 15 seconds even though they execute successf
 
 **Result**: Commands that produce output no longer fail with timeout errors. The tool uses whatever output was captured, making it more resilient to stream completion issues.
 
+## 🚫 VS Code API Limitation: No Inline Status Bar Menus (2025-06-04)
+
+**Important Finding**: VS Code does NOT provide a public API to create inline status bar menus like GitHub Copilot.
+
+### What We Wanted
+- Single status bar button that opens a menu right at the status bar
+- Similar to GitHub Copilot's menu behavior
+- Consolidated UI for all toggles and options
+
+### Why It's Not Possible
+- GitHub Copilot uses internal/privileged VS Code APIs
+- These APIs are not available to regular extensions
+- The only menu option is QuickPick, which appears at top center
+
+### Decision
+- **Keep current implementation** with separate status bar items
+- This provides better UX than a QuickPick menu
+- Direct toggle access is more convenient
+- Phase 2 (Menu System) has been CANCELLED
+
+### Current Status Bar Items (Keeping)
+1. MCP Server status and toggle
+2. Apply Diff Auto-Approve toggle  
+3. Shell Auto-Approve toggle
+
+This is the best approach given VS Code's API constraints.
+
+## ✅ Phase 2: QuickPick Menu Implementation - COMPLETED (2025-06-04)
+
+### What Was Implemented
+Despite VS Code API limitations, we implemented a consolidated menu using QuickPick:
+
+1. **Single Main Menu Button**: 
+   - Text: `$(gear) MCP Server` or `$(server-process) MCP Server` when running
+   - Shows warning icon when auto-approval is enabled
+   - Comprehensive tooltip with all statuses
+
+2. **QuickPick Menu Features**:
+   - All toggles in one place
+   - Rich descriptions and detail text
+   - Icons for visual clarity
+   - Current status shown in labels
+
+3. **Menu Options**:
+   - MCP Server toggle (with port info)
+   - Apply Diff Auto-Approve toggle
+   - Shell Auto-Approve toggle (with danger warning)
+   - Show Server Info
+   - Extension Settings
+
+### Limitations
+- Menu appears at top center, not inline at status bar
+- This is the best we can do with public VS Code APIs
+- GitHub Copilot uses internal APIs not available to us
+
+### Result
+- Cleaner status bar (single button instead of 3)
+- All functionality accessible from one menu
+- Status indicators in button and tooltip
+
 ### ✅ CRITICAL SUCCESS: Shell Test Fixes Complete (2025-06-04)
 
 **ALL SHELL TESTS NOW PASSING! 🎉**

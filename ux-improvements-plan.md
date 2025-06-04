@@ -106,41 +106,40 @@
 
 ### **Phase 2: Status Bar Menu System**
 
-#### Task 2.1: Main Menu Button Design
-**Target**: Single status bar button with popup menu (like GitHub Copilot)
+**🚫 VS CODE LIMITATION**: VS Code does not provide a public API to create inline status bar menus like GitHub Copilot. The inline menu is only available to internal/privileged extensions.
 
-**Design Specifications**:
-```typescript
-// Main button appearance
-{
-    text: "$(gear) VSCode MCP Server",
-    alignment: vscode.StatusBarAlignment.Right,
-    priority: 100,
-    command: 'vscode-mcp-server.showMainMenu'
-}
-```
-- **Status**: ⬜ Not Started
+#### Task 2.1: QuickPick Menu Implementation
+**Implemented Solution**: Single status bar button with QuickPick menu
+- ✅ Single consolidated status bar item
+- ✅ Shows all options in one place
+- ✅ Rich descriptions and details for each option
+    - ❌ Appears at top center, not inline like GitHub Copilot
+- ✅ Best available option within VS Code API constraints
 
-#### Task 2.2: Popup Menu Structure
-```
-┌─ VSCode MCP Server ─────────────────┐
-│ $(server) MCP Server: Port 3000     │ ← Server status & toggle
-│ $(pass-filled) Auto-Approve (Diff): ON  │ ← Diff approval toggle  
-│ $(shield) Auto-Approve (Shell): OFF │ ← Shell approval toggle
-│ $(info) Show Server Info            │ ← Info command
-│ $(gear) Extension Settings          │ ← Settings link
-└─────────────────────────────────────┘
-```
-- **Status**: ⬜ Not Started
+    **Implementation Details**:
+- Main button shows server status with icon
+- Warning indicator when auto-approval is enabled
+- Tooltip shows current status of all features
+- QuickPick menu provides all toggle options
 
-#### Task 2.3: Menu Implementation
-- **File**: `src/extension.ts`
-- **Method**: `vscode.window.showQuickPick()` with custom QuickPickItems
-- **Features**:
-  - Real-time status updates
-  - Visual indicators (icons, colors)
-  - Tooltips for each option
-- **Status**: ⬜ Not Started
+- **Status**: ✅ COMPLETED (with API constraints)
+
+#### Task 2.2: QuickPick Menu Structure
+- **Status**: ✅ COMPLETED
+- Menu shows:
+  - Server status with toggle
+  - Apply Diff auto-approval toggle
+  - Shell auto-approval toggle
+  - Server info command
+  - Settings shortcut
+- Each item has icon, description, and detail text
+
+#### Task 2.3: Main Button Implementation  
+- **Status**: ✅ COMPLETED
+- Single status bar button: `$(gear) MCP Server`
+- Dynamic icon based on server state
+- Warning indicator for auto-approval modes
+- Comprehensive tooltip with all statuses
 
 ---
 
