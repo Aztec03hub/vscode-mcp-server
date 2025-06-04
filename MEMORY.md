@@ -151,35 +151,36 @@ const COMMAND_DELAY_MS = 50; // PowerShell workaround
 
 ### 🎯 IMMEDIATE PRIORITIES (Based on User Requirements)
 
-#### 1. Output Limiting (Task 4.1) - Character-Based Implementation
+#### 1. Output Limiting (Task 4.1) - Character-Based Implementation ✅ COMPLETED
 **Requirements**: 
-- 100,000 character limit (not line-based)
-- `silenceOutput` flag for long commands
-- Auto-save to `{shellId}-output.txt` when truncated
-- Overwrite file per shell on each command
-- Auto-cleanup when shell closes/times out
-- Clear truncation messages with file location
+- ✅ 100,000 character limit (not line-based)
+- ✅ `silenceOutput` flag for long commands
+- ✅ Auto-save to `.vscode-mcp-output/{shellId}-output.txt` when truncated
+- ✅ Overwrite file per shell on each command
+- ✅ Auto-cleanup when shell closes/times out
+- ✅ Silence flag returns: "Command completed, full output saved to file <filename>"
 
-#### 2. Safety Warnings (Task 4.2) - Simple Regex Detection
+#### 2. Safety Warnings (Task 4.2) - Simple Regex Detection ✅ COMPLETED
 **Requirements**:
-- Simple regex pattern matching only
-- Detect: `rm -rf`, `del /s`, `format`, `rmdir /s`
-- Warning only - don't block commands
-- Include warnings in command execution results
+- ✅ Simple regex pattern matching only
+- ✅ Detect: `rm -rf`, `del /s`, `format`, `rmdir /s`, `dd`, `fdisk`, `mkfs`, and more
+- ✅ Warning only - don't block commands
+- ✅ Include warnings prominently in command execution results
 
-#### 3. Interactive Pattern Detection (Task 2.1) - Regex + Keywords
+#### 3. Interactive Pattern Detection (Task 2.1) - Regex + Keywords ✅ COMPLETED
 **Requirements**:
-- Regex patterns for common prompts (y/n, continue, password)
-- Simple keyword-based detection
-- Auto-switch to waiting-for-input mode
-- Leverage existing timeout strategies (15s/45s/immediate)
+- ✅ Regex patterns for common prompts (y/n, continue, password) - 15 patterns
+- ✅ Simple keyword-based detection with **KEYWORD PRECEDENCE** over regex - 15 keywords
+- ✅ Auto-switch to waiting-for-input mode when patterns detected
+- ✅ Leverage existing timeout strategies (15s/45s/immediate)
 
-#### 4. Testing Implementation (Task 5.2) - Automated + Manual
+#### 4. Testing Implementation (Task 5.2) - Automated + Manual ✅ COMPLETED
 **Requirements**:
-- Create automated test files
-- Write manual testing documentation  
-- Test scenarios: SvelteKit scaffolding, multiple shells, interactive commands, background processes
-- Test new features: output limiting, safety warnings, pattern detection
+- ✅ Create automated test files in `src/test/shell-tools/` subdirectory (4 test files)
+- ✅ Write comprehensive manual testing documentation (detailed guide)
+- ✅ Test scenarios: SvelteKit scaffolding, multiple shells, interactive commands, background processes
+- ✅ Test new features: output limiting, safety warnings (SAFE TESTING), pattern detection
+- ✅ Safety-conscious testing approach with minimal destructive command testing
 
 #### 5. Optional: MCP Shell Management Tools (Tasks 3.2/3.3)
 **Requirements**: Simple wrappers only - no additional features beyond registry

@@ -12,9 +12,63 @@ const COMMAND_DELAY_MS = 50; // 50ms delay after PowerShell commands (VSCode Bug
 // Shell Registry Configuration
 const MAX_SHELLS = 8; // Maximum number of concurrent shells
 const SHELL_CLEANUP_TIMEOUT = 5 * 60 * 1000; // 5 minutes auto-cleanup for unused shells
-const DEFAULT_OUTPUT_LINE_LIMIT = 1000; // Default line limit for command output
 const INTERACTIVE_TIMEOUT_MS = 45000; // 45 seconds timeout for interactive commands
 const DEFAULT_TIMEOUT_MS = 15000; // 15 seconds timeout for default commands
+
+// Output Management Configuration (Task 4.1)
+const DEFAULT_OUTPUT_CHARACTER_LIMIT = 100000; // 100k characters maximum
+const OUTPUT_DIRECTORY = '.vscode-mcp-output'; // Directory for output files
+
+// Safety Warnings Configuration (Task 4.2)
+const DESTRUCTIVE_PATTERNS = [
+    /\brm\s+-rf\b/,           // rm -rf (Unix/Linux)
+    /\bdel\s+\/s\b/i,         // del /s (Windows)
+    /\bformat\b/i,           // format command
+    /\brmdir\s+\/s\b/i,       // rmdir /s (Windows)
+    /\brd\s+\/s\b/i,          // rd /s (Windows short form)
+    /\bmkfs\b/i,             // mkfs (filesystem creation)
+    /\bdd\s+if=.*of=/,       // dd command (disk operations)
+    /\bfdisk\b/i,            // fdisk (disk partitioning)
+    /\bparted\b/i,           // parted (disk partitioning)
+    /\bgdisk\b/i             // gdisk (disk partitioning)
+];
+
+// Interactive Pattern Detection Configuration (Task 2.1)
+const INTERACTIVE_PATTERNS = [
+    /\?\s*$/,                    // Questions ending with ?
+    /\(y\/n\)/i,                 // Yes/no prompts (case insensitive)
+    /\(Y\/N\)/,                  // Yes/No prompts (case sensitive)
+    /\(yes\/no\)/i,              // Full yes/no prompts
+    /continue\?/i,               // Continue prompts
+    /proceed\?/i,                // Proceed prompts
+    /press\s+any\s+key/i,        // Press any key
+    /press\s+enter/i,            // Press enter
+    /enter\s+password/i,         // Password prompts
+    /password:/i,                // Password colon prompts
+    /confirm/i,                  // Confirmation prompts
+    /are\s+you\s+sure/i,         // Are you sure prompts
+    /do\s+you\s+want/i,          // Do you want prompts
+    /\[y\/n\]/i,                 // Bracketed y/n
+    /\[yes\/no\]/i               // Bracketed yes/no
+];
+
+const INTERACTIVE_KEYWORDS = [
+    'password:',
+    'confirm:',
+    'continue?',
+    'proceed?',
+    'y/n',
+    'yes/no',
+    'press any key',
+    'press enter',
+    'are you sure',
+    'do you want',
+    'enter password',
+    '(y/n)',
+    '(yes/no)',
+    '[y/n]',
+    '[yes/no]'
+];
 
 // Shell status types
 type ShellStatus = 'idle' | 'busy' | 'waiting-for-input' | 'crashed';
@@ -136,12 +190,24 @@ class ShellRegistry {
         try {
             shell.terminal.dispose();
             this.shells.delete(shellId);
+            
+            // Clean up associated output file (Task 4.1)
+            cleanupOutputFile(shellId).catch(error => {
+                console.warn(`[Shell Registry] Warning: Could not cleanup output file for ${shellId}:`, error);
+            });
+            
             console.log(`[Shell Registry] Closed shell: ${shellId}`);
             return true;
         } catch (error) {
             console.error(`[Shell Registry] Error closing shell ${shellId}:`, error);
             // Remove from registry anyway to prevent zombie shells
             this.shells.delete(shellId);
+            
+            // Still try to cleanup output file
+            cleanupOutputFile(shellId).catch(cleanupError => {
+                console.warn(`[Shell Registry] Warning: Could not cleanup output file for ${shellId}:`, cleanupError);
+            });
+            
             return false;
         }
     }
@@ -348,6 +414,163 @@ function isPowerShellShell(): boolean {
 let powershellCommandCounter = 0;
 
 /**
+ * Creates the output directory if it doesn't exist
+ * @returns The absolute path to the output directory
+ */
+async function ensureOutputDirectory(): Promise<string> {
+    let outputDirPath: string;
+    
+    // Get workspace root or fallback to current working directory
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        outputDirPath = path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, OUTPUT_DIRECTORY);
+    } else {
+        outputDirPath = path.join(process.cwd(), OUTPUT_DIRECTORY);
+    }
+    
+    try {
+        const outputDirUri = vscode.Uri.file(outputDirPath);
+        await vscode.workspace.fs.createDirectory(outputDirUri);
+        console.log(`[Shell Tools] Ensured output directory exists: ${outputDirPath}`);
+    } catch (error) {
+        // Directory might already exist, that's fine
+        console.log(`[Shell Tools] Output directory handling: ${error instanceof Error ? error.message : String(error)}`);
+    }
+    
+    return outputDirPath;
+}
+
+/**
+ * Saves command output to a file and returns the file path
+ * @param shellId The shell ID for naming the file
+ * @param output The command output to save
+ * @returns The absolute path to the saved file
+ */
+async function saveOutputToFile(shellId: string, output: string): Promise<string> {
+    const outputDirPath = await ensureOutputDirectory();
+    const fileName = `${shellId}-output.txt`;
+    const filePath = path.join(outputDirPath, fileName);
+    const fileUri = vscode.Uri.file(filePath);
+    
+    try {
+        // Write the output to the file (this will overwrite if exists)
+        await vscode.workspace.fs.writeFile(fileUri, Buffer.from(output, 'utf8'));
+        console.log(`[Shell Tools] Saved output to file: ${filePath} (${output.length} characters)`);
+        return filePath;
+    } catch (error) {
+        console.error(`[Shell Tools] Error saving output to file:`, error);
+        throw new Error(`Failed to save output to file: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Deletes the output file for a specific shell
+ * @param shellId The shell ID for the file to delete
+ */
+async function cleanupOutputFile(shellId: string): Promise<void> {
+    try {
+        const outputDirPath = await ensureOutputDirectory();
+        const fileName = `${shellId}-output.txt`;
+        const filePath = path.join(outputDirPath, fileName);
+        const fileUri = vscode.Uri.file(filePath);
+        
+        await vscode.workspace.fs.delete(fileUri);
+        console.log(`[Shell Tools] Cleaned up output file: ${filePath}`);
+    } catch (error) {
+        // File might not exist, that's fine
+        console.log(`[Shell Tools] Output file cleanup (file might not exist): ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+/**
+ * Processes command output with character limiting and file saving
+ * @param output The raw command output
+ * @param shellId The shell ID for file naming
+ * @param silenceOutput Whether to suppress output display
+ * @returns Processed output result with truncation info
+ */
+async function processCommandOutput(
+    output: string, 
+    shellId: string, 
+    silenceOutput: boolean = false
+): Promise<{ displayOutput: string; truncated: boolean; filePath?: string }> {
+    const outputLength = output.length;
+    let truncated = false;
+    let filePath: string | undefined;
+    let displayOutput = output;
+    
+    // Check if output exceeds character limit
+    if (outputLength > DEFAULT_OUTPUT_CHARACTER_LIMIT) {
+        truncated = true;
+        
+        // Save full output to file
+        filePath = await saveOutputToFile(shellId, output);
+        
+        if (silenceOutput) {
+            // For silence mode, return brief completion message
+            displayOutput = `Command completed, full output saved to file <${path.basename(filePath)}>`;
+        } else {
+            // For normal mode, show truncated output with file reference
+            const truncatedOutput = output.substring(0, DEFAULT_OUTPUT_CHARACTER_LIMIT);
+            displayOutput = `${truncatedOutput}\n\n**[OUTPUT TRUNCATED]**\n` +
+                          `Output too long, truncated to ${DEFAULT_OUTPUT_CHARACTER_LIMIT.toLocaleString()} characters. ` +
+                          `Full output saved to file: ${path.basename(filePath)}`;
+        }
+    } else if (silenceOutput) {
+        // For silence mode with short output, still save to file but don't show truncation message
+        filePath = await saveOutputToFile(shellId, output);
+        displayOutput = `Command completed, full output saved to file <${path.basename(filePath)}>`;
+    }
+    
+    return { displayOutput, truncated, filePath };
+    }
+
+    /**
+ * Detects potentially destructive commands using simple pattern matching (Task 4.2)
+ * @param command The command to analyze
+ * @returns Warning message if destructive pattern detected, null otherwise
+ */
+    function detectDestructiveCommand(command: string): string | null {
+    // Check command against all destructive patterns
+    for (const pattern of DESTRUCTIVE_PATTERNS) {
+        if (pattern.test(command)) {
+            console.log(`[Shell Tools] Destructive command pattern detected: ${pattern} in command: ${command}`);
+            return `⚠️  **SAFETY WARNING**: This command appears to be potentially destructive and may delete files, format drives, or cause data loss. Please verify the command before proceeding.`;
+        }
+    }
+    
+    return null;
+    }
+
+    /**
+ * Detects interactive prompts in command output using keywords and regex patterns (Task 2.1)
+ * Keywords take precedence over regex patterns as specified by user requirements
+ * @param output The command output to analyze
+ * @returns True if interactive prompt detected, false otherwise
+ */
+    function detectInteractivePrompt(output: string): boolean {
+    // Convert output to lowercase for case-insensitive keyword matching
+    const lowerOutput = output.toLowerCase();
+    
+    // First priority: Check keywords (user specified keywords take precedence)
+    for (const keyword of INTERACTIVE_KEYWORDS) {
+        if (lowerOutput.includes(keyword.toLowerCase())) {
+            console.log(`[Shell Tools] Interactive prompt detected via keyword: "${keyword}" in output`);
+            return true;
+        }
+    }
+    
+    // Second priority: Check regex patterns
+    for (const pattern of INTERACTIVE_PATTERNS) {
+        if (pattern.test(output)) {
+            console.log(`[Shell Tools] Interactive prompt detected via regex pattern: ${pattern} in output`);
+            return true;
+        }
+    }
+    
+    return false;
+    }
+
+    /**
  * Modifies a command for PowerShell to include uniqueness counter and delay workaround
  * @param command The original command
  * @returns Modified command with PowerShell-specific workarounds
@@ -538,9 +761,10 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
             cwd: z.string().optional().default('.').describe('Optional working directory for the command'),
             shellId: z.string().optional().describe('ID of the shell to use (e.g., "shell-1"). If not provided, uses default shell or creates new one'),
             interactive: z.boolean().optional().default(false).describe('Set to true for commands that might require user input (uses longer timeout)'),
-            background: z.boolean().optional().default(false).describe('Set to true for long-running background processes (returns immediately with shell info)')
+            background: z.boolean().optional().default(false).describe('Set to true for long-running background processes (returns immediately with shell info)'),
+            silenceOutput: z.boolean().optional().default(false).describe('Set to true to suppress output display and save full output to file only (useful for long-running commands)')
         },
-        async ({ command, cwd, shellId, interactive, background }): Promise<CallToolResult> => {
+        async ({ command, cwd, shellId, interactive, background, silenceOutput }): Promise<CallToolResult> => {
             try {
                 const registry = ShellRegistry.getInstance();
                 
@@ -594,10 +818,17 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 
                 const terminal = managedShell.terminal;
                 
+                // Check for potentially destructive commands (Task 4.2)
+                const safetyWarning = detectDestructiveCommand(command);
+                
                 // Update shell status to busy
                 registry.updateShellStatus(managedShell.id, 'busy', command);
                 
-                console.log(`[Shell Tools] Executing command in shell ${managedShell.id}: ${command}${cwd && cwd !== '.' ? ` (cwd: ${cwd})` : ''}`);
+                console.log(`[Shell Tools] Executing command in shell ${managedShell.id}: ${command}${cwd && cwd !== '.' ? ` (cwd: ${cwd})` : ''}${safetyWarning ? ' [DESTRUCTIVE COMMAND DETECTED]' : ''}`);
+                
+                if (safetyWarning) {
+                    console.warn(`[Shell Tools] Safety Warning: ${safetyWarning}`);
+                }
                 
                 // For background processes, return immediately with shell info
                 if (background) {
@@ -694,11 +925,40 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     }
                 }
                 
-                // Update shell status
+                // Check for interactive prompts in output (Task 2.1)
+                let interactiveDetected = false;
+                if (!timedOut && output) {
+                    interactiveDetected = detectInteractivePrompt(output);
+                }
+                
+                // Update shell status based on interactive detection
                 if (!timedOut) {
-                    registry.updateShellStatus(managedShell.id, 'idle');
+                    if (interactiveDetected) {
+                        registry.updateShellStatus(managedShell.id, 'waiting-for-input', command);
+                        console.log(`[Shell Tools] Shell ${managedShell.id} switched to waiting-for-input due to interactive prompt detection`);
+                    } else {
+                        registry.updateShellStatus(managedShell.id, 'idle');
+                    }
                     // Update the shell's current directory with the actual directory after command execution
                     registry.updateCurrentDirectory(managedShell.id, cwdAfter);
+                }
+                
+                // Process output with limiting and file management (Task 4.1)
+                let finalOutput = output;
+                let outputInfo = '';
+                
+                if (!timedOut) {
+                    // Only process output limiting for completed commands
+                    const outputResult = await processCommandOutput(output, managedShell.id, silenceOutput || false);
+                    finalOutput = outputResult.displayOutput;
+                    
+                    if (outputResult.truncated) {
+                        outputInfo = silenceOutput ? 
+                            ` Output saved to file.` : 
+                            ` Output was truncated due to length (${output.length.toLocaleString()} characters).`;
+                    } else if (silenceOutput && outputResult.filePath) {
+                        outputInfo = ` Output saved to file.`;
+                    }
                 }
                 
                 // Detect shell type
@@ -709,15 +969,17 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                         {
                             type: 'text',
                             text: `**Command Execution Results**\n\n` +
+                                  `${safetyWarning ? `${safetyWarning}\n\n` : ''}` +
                                   `**Command:** ${command}\n` +
                                   `**Shell:** ${managedShell.id} (${managedShell.name})\n` +
                                   `**Shell Type:** ${shellType}\n` +
-                                  `**Status:** ${timedOut ? (interactive ? 'Waiting for input' : 'Timed out') : 'Completed'}\n` +
+                                  `**Status:** ${timedOut ? (interactive ? 'Waiting for input' : 'Timed out') : (interactiveDetected ? 'Waiting for input (interactive prompt detected)' : 'Completed')}${outputInfo}\n` +
                                   `**Working Directory Before:** ${cwdBefore}\n` +
                                   `**Working Directory After:** ${cwdAfter}\n` +
                                   `**Interactive Mode:** ${interactive ? 'Yes' : 'No'}\n` +
-                                  `**Background Mode:** ${background ? 'Yes' : 'No'}\n\n` +
-                                  `**Output:**\n${output}${timedOut && interactive ? '\n\n*Use send_input_to_shell if the command is waiting for input.*' : ''}`
+                                  `**Background Mode:** ${background ? 'Yes' : 'No'}\n` +
+                                  `**Silence Output:** ${silenceOutput ? 'Yes' : 'No'}\n\n` +
+                                  `**Output:**\n${finalOutput}${timedOut && interactive ? '\n\n*Use send_input_to_shell if the command is waiting for input.*' : ''}${interactiveDetected ? '\n\n🗨 **Interactive prompt detected!** Use send_input_to_shell to provide input to this shell.' : ''}`
                         }
                     ]
                 };
