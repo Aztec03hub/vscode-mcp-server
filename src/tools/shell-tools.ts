@@ -663,28 +663,52 @@ export async function executeShellCommand(
     
     // Capture output using the stream with timeout handling
     let output = '';
+    let streamCompleted = false;
     
     try {
-        // Create a promise for stream reading with timeout
+        // Create a promise for stream reading
         const streamPromise = (async () => {
-            const outputStream = (execution as any).read();
-            for await (const data of outputStream) {
-                output += data;
+            try {
+                const outputStream = (execution as any).read();
+                for await (const data of outputStream) {
+                    output += data;
+                }
+                streamCompleted = true;
+                return output;
+            } catch (streamError) {
+                console.error(`[Shell Tools] Stream reading error:`, streamError);
+                // If stream fails but we have output, consider it partial success
+                if (output.length > 0) {
+                    streamCompleted = true;
+                    return output;
+                }
+                throw streamError;
             }
-            return output;
         })();
         
-        // Create a timeout promise
-        const timeoutPromise = new Promise<never>((_, reject) => {
+        // Create a timeout promise that can resolve with partial output
+        const timeoutPromise = new Promise<string>((resolve, reject) => {
             setTimeout(() => {
-                reject(new Error(`Command stream timeout after ${timeoutMs}ms. This may indicate a shell integration issue.`));
+                // If we have some output, don't reject - just return what we have
+                if (output.length > 0) {
+                    console.warn(`[Shell Tools] Stream timeout but have output (${output.length} chars), using partial output`);
+                    streamCompleted = true;
+                    resolve(output);
+                } else {
+                    reject(new Error(`Command stream timeout after ${timeoutMs}ms. This may indicate a shell integration issue.`));
+                }
             }, timeoutMs);
         });
         
         // Race between stream completion and timeout
-        await Promise.race([streamPromise, timeoutPromise]);
+        const result = await Promise.race([streamPromise, timeoutPromise]);
         
-        console.log(`[Shell Tools] Command completed successfully, output length: ${output.length}`);
+        // Use the result if we got one
+        if (result && result.length > 0) {
+            output = result;
+        }
+        
+        console.log(`[Shell Tools] Command completed ${streamCompleted ? 'fully' : 'partially'}, output length: ${output.length}`);
         
     } catch (error) {
         console.error(`[Shell Tools] Command execution error:`, error);

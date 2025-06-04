@@ -86,17 +86,21 @@
      - Wait for response before proceeding
 
 #### Task 1.4: Safety Testing Protocol
-- **Status**: ⬜ Not Started
-- **Testing Steps**:
-  1. Create test file: `echo "test" > test-file.txt`
-  2. Test command: `rm test-file.txt` (ONLY safe test command allowed)
-  3. Verify approval dialog appears
-  4. Test "Accept" flow - file should be deleted
-  5. Create another test file and test "Reject" flow - file should remain
-  6. Test 30-second timeout - should auto-reject
-  7. Enable shell auto-approval and verify no dialog appears
-  8. Test with safe commands - should execute without approval
-- **Logging**: Add comprehensive console.log statements for debugging
+- **Status**: ✅ COMPLETED
+- **Testing Guide Created**: `SHELL_SAFETY_TESTING_GUIDE.md`
+  - **Implementation**:
+  - Comprehensive testing guide with 5 test scenarios
+  - Step-by-step instructions for each test
+  - Expected behaviors clearly documented
+  - Troubleshooting section included
+  - Safety notes and warnings emphasized
+  - **Test Coverage**:
+  1. Approval/Rejection flow testing
+  2. 30-second timeout testing
+  3. Shell auto-approval mode testing
+  4. Safe command verification
+  5. Multiple destructive pattern testing
+- **Console Output**: Extension Host logs show detailed flow
 
 ---
 

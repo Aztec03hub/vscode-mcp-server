@@ -61,13 +61,18 @@ class ShellApprovalManager {
     }
     
     private createApprovalButtons() {
-        // Accept button (green background)
+        // Accept button 
+        // VS Code limitation: Only 3 background colors available for status bar items:
+        // - errorBackground (red)
+        // - warningBackground (yellow/orange) 
+        // - prominentBackground (blue)
+        // Using warningBackground for Accept as prominentBackground may not be visible in all themes
         this.acceptButton = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right, 
             101  // High priority to appear on the right
         );
-        this.acceptButton.text = '$(check) Accept';
-        this.acceptButton.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+        this.acceptButton.text = '✅ Accept';
+        this.acceptButton.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         this.acceptButton.command = 'vscode-mcp-server.approveShellCommand';
         this.acceptButton.tooltip = `Execute the dangerous command: ${this.pendingCommand}`;
         this.acceptButton.show();
@@ -77,7 +82,7 @@ class ShellApprovalManager {
             vscode.StatusBarAlignment.Right, 
             102  // Highest priority to appear rightmost
         );
-        this.rejectButton.text = '$(x) Reject';
+        this.rejectButton.text = '❌ Reject';
         this.rejectButton.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
         this.rejectButton.command = 'vscode-mcp-server.rejectShellCommand';
         this.rejectButton.tooltip = 'Cancel the dangerous command';
