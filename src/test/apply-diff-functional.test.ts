@@ -454,4 +454,199 @@ suite('Apply Diff Functional Tests', () => {
             });
         });
     });
-});
+
+    suite('Full File Replacement Tests (endLine: -1)', () => {
+        test('Should replace entire file when endLine: -1 with empty search', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'full-replace-empty.ts');
+            const initialContent = `line 1
+        line 2
+        line 3
+        line 4`;
+            fs.writeFileSync(testFile, initialContent);
+            clearFileCache(vscode.Uri.file(testFile)); // Clear cache before test
+
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+
+            await applyDiffTool.handler({
+                filePath: 'full-replace-empty.ts',
+                description: 'Replace entire file',
+                diffs: [{
+                    startLine: 0,
+                    endLine: -1,
+                    search: '',
+                    replace: 'completely new content\nwith multiple lines\nreplacing everything'
+                }]
+            });
+
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.strictEqual(
+                updatedContent,
+                'completely new content\nwith multiple lines\nreplacing everything',
+                'Should replace entire file with new content'
+            );
+        });
+
+        test('Should replace from startLine to end when endLine: -1', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'partial-replace.ts');
+            const initialContent = `keep this line
+        line 2
+        line 3
+        line 4`;
+            fs.writeFileSync(testFile, initialContent);
+            clearFileCache(vscode.Uri.file(testFile));
+
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+
+            await applyDiffTool.handler({
+                filePath: 'partial-replace.ts',
+                description: 'Replace from line 1 to end',
+                diffs: [{
+                    startLine: 1,
+                    endLine: -1,
+                    search: '',
+                    replace: 'new line 2\nnew line 3'
+                }]
+            });
+
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.strictEqual(
+                updatedContent,
+                'keep this line\nnew line 2\nnew line 3',
+                'Should keep first line and replace rest'
+            );
+        });
+
+        test('Should work with endLine: -1 on new file', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'new-file-replace.ts');
+            // Don't create the file - it should be created by apply_diff
+            // File doesn't exist yet, no need to clear cache
+
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+
+            await applyDiffTool.handler({
+                filePath: 'new-file-replace.ts',
+                description: 'Create new file with full replacement',
+                diffs: [{
+                    startLine: 0,
+                    endLine: -1,
+                    search: '',
+                    replace: 'new file content\ncreated with endLine: -1'
+                }]
+            });
+
+            assert.ok(fs.existsSync(testFile), 'File should be created');
+            const content = fs.readFileSync(testFile, 'utf8');
+            assert.strictEqual(
+                content,
+                'new file content\ncreated with endLine: -1',
+                'Should create file with specified content'
+            );
+        });
+
+        test('Should validate search content with endLine: -1', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'validate-replace.ts');
+            const initialContent = `function test() {
+    return "hello";
+        }`;
+            fs.writeFileSync(testFile, initialContent);
+            clearFileCache(vscode.Uri.file(testFile));
+
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+
+            // This should work - search content matches from startLine to end
+            await applyDiffTool.handler({
+                filePath: 'validate-replace.ts',
+                description: 'Replace with validation',
+                diffs: [{
+                    startLine: 1,
+                    endLine: -1,
+                    search: '    return "hello";\n}',
+                    replace: '    return "world";\n}'
+                }]
+            });
+
+            const updatedContent = fs.readFileSync(testFile, 'utf8');
+            assert.strictEqual(
+                updatedContent,
+                'function test() {\n    return "world";\n}',
+                'Should replace content from line 1 to end'
+            );
+        });
+
+        test('Should fail when search content does not match with endLine: -1', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'fail-validate.ts');
+            const initialContent = `function test() {
+    return "hello";
+        }`;
+            fs.writeFileSync(testFile, initialContent);
+            clearFileCache(vscode.Uri.file(testFile));
+
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+
+            try {
+                await applyDiffTool.handler({
+                    filePath: 'fail-validate.ts',
+                    description: 'Should fail validation',
+                    diffs: [{
+                        startLine: 0,
+                        endLine: -1,
+                        search: 'wrong content that does not match',
+                        replace: 'replacement content'
+                    }]
+                });
+                assert.fail('Should throw an error when search content does not match');
+            } catch (error: any) {
+                assert.ok(
+                    error.message.includes('Validation failed') || 
+                    error.message.includes('Full file replacement search content'),
+                    'Should indicate validation failed for full file replacement'
+                );
+            }
+        });
+
+        test('Should handle multiple diffs with endLine: -1', async () => {
+            const testFile = path.join(testWorkspaceFolder, 'multi-replace.ts');
+            const initialContent = `// header comment
+        function test1() {
+    return 1;
+        }
+
+        function test2() {
+    return 2;
+        }`;
+            fs.writeFileSync(testFile, initialContent);
+            clearFileCache(vscode.Uri.file(testFile));
+
+            const applyDiffTool = mockServer.tools.get('apply_diff');
+
+            // Note: Multiple endLine: -1 diffs would conflict, so this tests the conflict resolution
+            try {
+                await applyDiffTool.handler({
+                    filePath: 'multi-replace.ts',
+                    description: 'Multiple full replacements should conflict',
+                    diffs: [
+                        {
+                            startLine: 0,
+                            endLine: -1,
+                            search: '',
+                            replace: 'first replacement'
+                        },
+                        {
+                            startLine: 1,
+                            endLine: -1,
+                            search: '',
+                            replace: 'second replacement'
+                        }
+                    ]
+                });
+                assert.fail('Should handle conflicts between multiple endLine: -1 diffs');
+            } catch (error: any) {
+                // This is expected - multiple full file replacements should conflict
+                assert.ok(
+                    error.message.includes('conflict') || error.message.includes('Validation failed'),
+                    'Should detect conflict between multiple full file replacements'
+                );
+            }
+        });
+    });
+        });
