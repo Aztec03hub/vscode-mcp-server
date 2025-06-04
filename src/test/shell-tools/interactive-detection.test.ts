@@ -1,5 +1,10 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
+import { 
+    INTERACTIVE_PATTERNS, 
+    INTERACTIVE_KEYWORDS, 
+    detectInteractivePrompt 
+} from '../../tools/shell-tools';
 
 /**
  * Test Suite: Interactive Pattern Detection (Task 2.1)
@@ -61,8 +66,8 @@ suite('Interactive Pattern Detection Tests', () => {
         ];
         
         keywordTests.forEach(test => {
-            // This would call detectInteractivePrompt(test.output) and expect true
-            assert.ok(true, `Should detect keyword "${test.keyword}" in: ${test.output}`);
+            const detected = detectInteractivePrompt(test.output);
+            assert.ok(detected, `Should detect keyword "${test.keyword}" in: ${test.output}`);
         });
     });
     
@@ -78,8 +83,8 @@ suite('Interactive Pattern Detection Tests', () => {
         ];
         
         regexTests.forEach(test => {
-            // This would call detectInteractivePrompt(test.output) and expect true
-            assert.ok(true, `Should detect pattern "${test.pattern}" in: ${test.output}`);
+            const detected = detectInteractivePrompt(test.output);
+            assert.ok(detected, `Should detect pattern "${test.pattern}" in: ${test.output}`);
         });
     });
     
@@ -110,8 +115,8 @@ suite('Interactive Pattern Detection Tests', () => {
         // Test edge cases that might cause false positives
         
         NON_INTERACTIVE_OUTPUTS.forEach(output => {
-            // This would call detectInteractivePrompt(output) and expect false
-            assert.ok(true, `Should NOT detect interactive prompt in: ${output}`);
+            const detected = detectInteractivePrompt(output);
+            assert.strictEqual(detected, false, `Should NOT detect interactive prompt in: ${output}`);
         });
     });
     
@@ -132,7 +137,8 @@ suite('Interactive Pattern Detection Tests', () => {
         ];
         
         caseTests.forEach(output => {
-            assert.ok(true, `Should handle case variation: ${output}`);
+            const detected = detectInteractivePrompt(output);
+            assert.ok(detected, `Should handle case variation: ${output}`);
         });
     });
     
@@ -141,13 +147,14 @@ suite('Interactive Pattern Detection Tests', () => {
         // Test that patterns are found anywhere in the output
         
         const multilineOutput = `
-Installing package...
-Progress: 50%
-Progress: 100%
-Do you want to restart the service? (y/n)
-`;
+    Installing package...
+    Progress: 50%
+    Progress: 100%
+    Do you want to restart the service? (y/n)
+    `;
         
-        assert.ok(true, 'Should detect interactive prompts in multi-line output');
+        const detected = detectInteractivePrompt(multilineOutput);
+        assert.ok(detected, 'Should detect interactive prompts in multi-line output');
     });
     
     test('Edge Case Pattern Matching', () => {
@@ -178,18 +185,22 @@ Do you want to restart the service? (y/n)
  */
 suite('Interactive Detection Integration Tests', () => {
     
-    test('Shell Status Auto-Switching', () => {
-        // Test that shell status switches to 'waiting-for-input' when interactive prompt detected
-        // Test that status remains 'idle' for non-interactive output
-        
-        assert.ok(true, 'Shell status should auto-switch on interactive detection');
+    test('Constants Validation', () => {
+        // Test that interactive constants are properly defined
+        assert.ok(Array.isArray(INTERACTIVE_PATTERNS), 'INTERACTIVE_PATTERNS should be an array');
+        assert.ok(Array.isArray(INTERACTIVE_KEYWORDS), 'INTERACTIVE_KEYWORDS should be an array');
+        assert.ok(INTERACTIVE_PATTERNS.length > 0, 'Should have interactive patterns defined');
+        assert.ok(INTERACTIVE_KEYWORDS.length > 0, 'Should have interactive keywords defined');
     });
     
-    test('Console Logging for Detection', () => {
-        // Test that interactive detection events are logged
-        // Test logging includes detected keyword/pattern information
+    test('Function Import Validation', () => {
+        // Test that the detectInteractivePrompt function is properly imported
+        assert.ok(typeof detectInteractivePrompt === 'function', 'detectInteractivePrompt should be a function');
         
-        assert.ok(true, 'Interactive detection should be logged to console');
+        // Test function executes without throwing
+        assert.doesNotThrow(() => {
+            detectInteractivePrompt('test output');
+        }, 'Function should execute without throwing');
     });
     
     test('Visual Feedback in Command Results', () => {

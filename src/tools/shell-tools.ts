@@ -21,16 +21,24 @@ const OUTPUT_DIRECTORY = '.vscode-mcp-output'; // Directory for output files
 
 // Safety Warnings Configuration (Task 4.2)
 const DESTRUCTIVE_PATTERNS = [
-    /\brm\s+-rf\b/,           // rm -rf (Unix/Linux)
+    // Unix/Linux file removal patterns
+    /^(?!.*\becho\b)(?!.*["'].*rm.*["']).*\brm\s+-rf\b/,  // rm -rf (avoid echo and quoted content)
+    /^(?!.*\becho\b)(?!.*["'].*rm.*["']).*\brm\s+-r\b/,   // rm -r (recursive)
+    /^(?!.*\becho\b)(?!.*["'].*rm.*["']).*\brm\s+-f\b/,   // rm -f (force)
+    /^(?!.*\becho\b)(?!.*["'].*rm.*["']).*\brm\s+[^-]\S+/, // rm with filename (not starting with -)
+    
+    // Windows file removal patterns
     /\bdel\s+\/s\b/i,         // del /s (Windows)
-    /\bformat\b/i,           // format command
-    /\brmdir\s+\/s\b/i,       // rmdir /s (Windows)
     /\brd\s+\/s\b/i,          // rd /s (Windows short form)
-    /\bmkfs\b/i,             // mkfs (filesystem creation)
-    /\bdd\s+if=.*of=/,       // dd command (disk operations)
-    /\bfdisk\b/i,            // fdisk (disk partitioning)
-    /\bparted\b/i,           // parted (disk partitioning)
-    /\bgdisk\b/i             // gdisk (disk partitioning)
+    /\brmdir\s+\/s\b/i,       // rmdir /s (Windows)
+    
+    // Disk/filesystem operations
+    /^(?!.*\becho\b)(?!.*["'].*format.*["']).*\bformat\s+[A-Za-z]:/i,  // format drive (require drive letter)
+    /\bmkfs\b/i,               // mkfs (filesystem creation)
+    /\bdd\s+if=.*of=/,         // dd command (disk operations)
+    /\bfdisk\b/i,              // fdisk (disk partitioning)
+    /\bparted\b/i,             // parted (disk partitioning)
+    /\bgdisk\b/i               // gdisk (disk partitioning)
 ];
 
 // Interactive Pattern Detection Configuration (Task 2.1)
@@ -498,6 +506,7 @@ async function processCommandOutput(
     let filePath: string | undefined;
     let displayOutput = output;
     
+    
     // Check if output exceeds character limit
     if (outputLength > DEFAULT_OUTPUT_CHARACTER_LIMIT) {
         truncated = true;
@@ -524,12 +533,12 @@ async function processCommandOutput(
     return { displayOutput, truncated, filePath };
     }
 
-    /**
+/**
  * Detects potentially destructive commands using simple pattern matching (Task 4.2)
  * @param command The command to analyze
  * @returns Warning message if destructive pattern detected, null otherwise
  */
-    function detectDestructiveCommand(command: string): string | null {
+export function detectDestructiveCommand(command: string): string | null {
     // Check command against all destructive patterns
     for (const pattern of DESTRUCTIVE_PATTERNS) {
         if (pattern.test(command)) {
@@ -541,13 +550,13 @@ async function processCommandOutput(
     return null;
     }
 
-    /**
+/**
  * Detects interactive prompts in command output using keywords and regex patterns (Task 2.1)
  * Keywords take precedence over regex patterns as specified by user requirements
  * @param output The command output to analyze
  * @returns True if interactive prompt detected, false otherwise
  */
-    function detectInteractivePrompt(output: string): boolean {
+    export function detectInteractivePrompt(output: string): boolean {
     // Convert output to lowercase for case-insensitive keyword matching
     const lowerOutput = output.toLowerCase();
     
@@ -821,14 +830,38 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 // Check for potentially destructive commands (Task 4.2)
                 const safetyWarning = detectDestructiveCommand(command);
                 
-                // Update shell status to busy
-                registry.updateShellStatus(managedShell.id, 'busy', command);
-                
                 console.log(`[Shell Tools] Executing command in shell ${managedShell.id}: ${command}${cwd && cwd !== '.' ? ` (cwd: ${cwd})` : ''}${safetyWarning ? ' [DESTRUCTIVE COMMAND DETECTED]' : ''}`);
                 
                 if (safetyWarning) {
                     console.warn(`[Shell Tools] Safety Warning: ${safetyWarning}`);
+                    
+                    // CRITICAL SAFETY CHECK: Stop execution until user approval
+                    // TODO: Check auto-approval setting from extension state
+                    const autoApprovalEnabled = false; // Placeholder - will be implemented in Task 1.2
+                    
+                    if (!autoApprovalEnabled) {
+                        // TODO: Show status bar approval buttons (Task 1.3)
+                        // For now, block execution and return error
+                        registry.updateShellStatus(managedShell.id, 'idle');
+                        
+                        return {
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `${safetyWarning}\n\n` +
+                                          `**Command:** ${command}\n\n` +
+                                          `**🛡️ EXECUTION BLOCKED FOR SAFETY**\n` +
+                                          `This command has been blocked to prevent potential damage. ` +
+                                          `Status bar approval buttons will be implemented in Task 1.3.\n\n` +
+                                          `To override: Enable shell auto-approval mode (Task 1.2) or wait for approval system implementation.`
+                                }
+                            ]
+                        };
+                    }
                 }
+                
+                // Update shell status to busy (only if command is approved or safe)
+                registry.updateShellStatus(managedShell.id, 'busy', command);
                 
                 // For background processes, return immediately with shell info
                 if (background) {
@@ -1244,3 +1277,14 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
         }
     );
 }
+
+// Exports for testing
+export {
+    MAX_SHELLS,
+    SHELL_CLEANUP_TIMEOUT,
+    DEFAULT_OUTPUT_CHARACTER_LIMIT,
+    OUTPUT_DIRECTORY,
+    DESTRUCTIVE_PATTERNS,
+    INTERACTIVE_PATTERNS,
+    INTERACTIVE_KEYWORDS
+};

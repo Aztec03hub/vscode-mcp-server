@@ -2,6 +2,10 @@ import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { 
+    DESTRUCTIVE_PATTERNS, 
+    detectDestructiveCommand 
+} from '../../tools/shell-tools';
 
 /**
  * Test Suite: Safety Warnings - SIMPLE PATTERN DETECTION ONLY (Task 4.2)
@@ -39,8 +43,8 @@ suite('Safety Warnings Tests - Pattern Detection Only', () => {
         // This tests the detectDestructiveCommand function with safe inputs
         
         SAFE_COMMANDS.forEach(command => {
-            // This would call detectDestructiveCommand(command) and expect null
-            assert.ok(true, `Safe command should not trigger warning: ${command}`);
+            const warning = detectDestructiveCommand(command);
+            assert.strictEqual(warning, null, `Safe command should not trigger warning: ${command}`);
         });
     });
     
@@ -49,8 +53,9 @@ suite('Safety Warnings Tests - Pattern Detection Only', () => {
         // This tests regex pattern matching against known destructive commands
         
         DESTRUCTIVE_COMMAND_STRINGS.forEach(command => {
-            // This would call detectDestructiveCommand(command) and expect warning string
-            assert.ok(true, `Destructive command should trigger warning: ${command}`);
+            const warning = detectDestructiveCommand(command);
+            assert.ok(warning !== null, `Destructive command should trigger warning: ${command}`);
+            assert.ok(warning!.includes('SAFETY WARNING'), `Warning should contain safety message for: ${command}`);
         });
     });
     
@@ -58,8 +63,13 @@ suite('Safety Warnings Tests - Pattern Detection Only', () => {
         // Test that warning messages are properly formatted
         // Test that warnings include safety emoji and clear text
         
-        const expectedWarningStart = '⚠️  **SAFETY WARNING**';
-        assert.ok(true, 'Warning message should start with safety indicator');
+        const testCommand = 'rm -rf /';
+        const warning = detectDestructiveCommand(testCommand);
+        
+        assert.ok(warning !== null, 'Should generate warning for destructive command');
+        assert.ok(warning!.includes('⚠️'), 'Warning should include warning emoji');
+        assert.ok(warning!.includes('**SAFETY WARNING**'), 'Warning should include safety warning text');
+        assert.ok(warning!.includes('destructive'), 'Warning should mention destructive nature');
     });
     
     test('Case Sensitivity in Pattern Matching', () => {
@@ -73,7 +83,10 @@ suite('Safety Warnings Tests - Pattern Detection Only', () => {
             'del /s'
         ];
         
-        assert.ok(true, 'Pattern matching should handle case variations');
+        caseVariations.forEach(command => {
+            const warning = detectDestructiveCommand(command);
+            assert.ok(warning !== null, `Case variation should trigger warning: ${command}`);
+        });
     });
     
     test('Partial Pattern Matching', () => {
@@ -86,7 +99,10 @@ suite('Safety Warnings Tests - Pattern Detection Only', () => {
             'mkdir del_backup',            // Contains "del" but is safe
         ];
         
-        assert.ok(true, 'Pattern matching should not trigger false positives');
+        safeVariations.forEach(command => {
+            const warning = detectDestructiveCommand(command);
+            assert.strictEqual(warning, null, `Safe variation should not trigger warning: ${command}`);
+        });
     });
     
 });
@@ -136,9 +152,10 @@ suite('Safety Warnings Integration - Minimal File Test', () => {
         // Test command string (not executed): would delete our test file
         const testCommand = `rm "${TEST_FILE}"`;
         
-        // This would test that detectDestructiveCommand detects the rm pattern
-        // Even for a single file deletion in our controlled test environment
-        assert.ok(true, 'Single file deletion should be detected by safety system');
+        // Test that detectDestructiveCommand detects the rm pattern
+        const warning = detectDestructiveCommand(testCommand);
+        assert.ok(warning !== null, 'Single file deletion should be detected by safety system');
+        assert.ok(warning!.includes('SAFETY WARNING'), 'Should generate proper warning message');
         
         // Verify test file still exists (command was not executed)
         assert.ok(fs.existsSync(TEST_FILE), 'Test file should still exist after pattern testing');
@@ -149,7 +166,13 @@ suite('Safety Warnings Integration - Minimal File Test', () => {
         // Test console logging of detected patterns
         // Test visual formatting in output
         
-        assert.ok(true, 'Warning display integration should work correctly');
+        const testCommand = 'format C:';
+        const warning = detectDestructiveCommand(testCommand);
+        
+        assert.ok(warning !== null, 'Should detect destructive command');
+        assert.ok(typeof warning === 'string', 'Warning should be a string');
+        assert.ok(warning.length > 10, 'Warning should be meaningful length');
+        assert.ok(warning.includes('**'), 'Warning should include markdown formatting');
     });
     
 });
