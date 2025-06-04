@@ -459,7 +459,18 @@ function normalizeDiffSections(diffs: DiffSection[]): NormalizedDiffSection[] {
         // Use new names if not already set
         normalized.search = normalized.search || diff.originalContent || '';
         normalized.replace = normalized.replace || diff.newContent || '';
-        
+
+        // Handle special case: endLine: -1 means replace from startLine to end of file
+        if (diff.endLine === -1) {
+            console.log(`[normalizeDiffSections] Diff ${index}: endLine: -1 detected - full file replacement from line ${diff.startLine}`);
+            
+            // For full file replacement, the search content should typically be empty
+            // or represent the content being replaced from startLine to end
+            if (normalized.search === undefined || normalized.search === '') {
+                console.log(`[normalizeDiffSections] Diff ${index}: Full file replacement with empty search - will replace all content from line ${diff.startLine}`);
+            }
+        }
+
         return normalized as NormalizedDiffSection;
     });
 }
@@ -1420,8 +1431,21 @@ async function validateDiffSections(
         for (let i = 0; i < normalizedDiffs.length; i++) {
             const diff = normalizedDiffs[i];
             
-            // For new files, if search content is empty or line hints are at 0, treat as insert
-            if (diff.search.trim() === '' || (diff.startLine === 0 && diff.endLine === 0)) {
+            // For new files, handle special cases
+            if (diff.endLine === -1) {
+                // Full file replacement on new file (equivalent to file creation)
+                console.log(`[validateDiffSections] Diff ${i}: Full file replacement on new file`);
+                matches.push({
+                    startLine: 0,
+                    endLine: 0,
+                    confidence: 1.0,
+                    strategy: 'new-file-full-replacement',
+                    actualContent: '',
+                    issues: []
+                });
+                continue;
+            } else if (diff.search.trim() === '' || (diff.startLine === 0 && diff.endLine === 0)) {
+                // Normal insert for new files
                 // Calculate how many lines this diff will add
                 const linesToAdd = diff.replace.split('\n').length;
                 
@@ -1467,7 +1491,41 @@ async function validateDiffSections(
         const diff = normalizedDiffs[i];
         console.log(`[validateDiffSections] Processing diff ${i}: lines ${diff.startLine}-${diff.endLine}`);
 
-        // Use hierarchical validation
+        // Special handling for endLine: -1 (full file replacement)
+        if (diff.endLine === -1) {
+            console.log(`[validateDiffSections] Diff ${i}: Processing full file replacement from line ${diff.startLine}`);
+            
+            // For full file replacement, create a match that covers from startLine to end of file
+            const actualEndLine = Math.max(0, lines.length - 1);
+            const actualContent = lines.slice(diff.startLine).join('\n');
+            
+            // If search content is empty or matches the actual content, it's valid
+            const isValid = diff.search.trim() === '' || diff.search === actualContent;
+            
+            if (isValid) {
+                matches.push({
+                    startLine: diff.startLine,
+                    endLine: actualEndLine,
+                    confidence: 1.0,
+                    strategy: 'full-file-replacement',
+                    actualContent: actualContent,
+                    issues: []
+                });
+                console.log(`[validateDiffSections] Diff ${i}: Full file replacement validated successfully (lines ${diff.startLine}-${actualEndLine})`);
+                continue; // Skip normal validation for this diff
+            } else {
+                conflicts.push({
+                    type: 'content_mismatch',
+                    diffIndex1: i,
+                    description: `Full file replacement search content doesn't match actual content from line ${diff.startLine}`,
+                    suggestion: 'For full file replacement with endLine: -1, use empty search content or ensure search matches content from startLine to end'
+                });
+                matches.push(null);
+                continue;
+            }
+        }
+
+        // Use hierarchical validation for normal diffs
         const validationStart = Date.now();
         const validationResult = await validationHierarchy.executeHierarchy(
             matcher,
@@ -2480,26 +2538,29 @@ export function registerEditTools(server: McpServer): void {
         - Atomic all-or-nothing application (or partial success mode)
         - Backward compatible with originalContent/newContent parameters
         - Partial success mode: apply successful diffs even if some fail
-        
+        - **Full file replacement**: Use endLine: -1 to replace entire file from startLine to end
+
         Best Practices:
         - Use for related changes that should be applied together
         - The tool will automatically find content even if line numbers have shifted
         - Handles whitespace and indentation differences gracefully
         - Shows confidence levels for fuzzy matches
         - Requires user approval before applying changes
-        
+        - For full file replacement, use startLine: 0, endLine: -1, empty search string
+
         Example usage:
         - Updating multiple import statements
         - Refactoring function signatures across a file
         - Adding multiple related code sections
         - Creating new files with initial content
+        - **Full file replacement**: Replace entire file contents
         `,
         {
             filePath: z.string().describe('Path to the file to modify or create'),
             description: z.string().optional().describe('Overall description of the changes'),
             diffs: z.array(z.object({
                 startLine: z.number().describe('Starting line number (0-based, hint for search)'),
-                endLine: z.number().describe('Ending line number (0-based, hint for search)'),
+                endLine: z.number().describe('Ending line number (0-based, hint for search). Use -1 to replace from startLine to end of file'),
                 search: z.string().optional().describe('Content to search for (formerly originalContent)'),
                 replace: z.string().optional().describe('Content to replace with (formerly newContent)'),
                 description: z.string().optional().describe('Description of this change section'),
