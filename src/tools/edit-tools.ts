@@ -448,17 +448,26 @@ function normalizeDiffSections(diffs: DiffSection[]): NormalizedDiffSection[] {
             normalized.replace = diff.newContent;
         }
         
-        // Ensure required fields are present
-        if (normalized.search === undefined && diff.originalContent === undefined) {
+        // Use new names if not already set, handling empty strings correctly
+        normalized.search = normalized.search !== undefined ? normalized.search : diff.originalContent;
+        normalized.replace = normalized.replace !== undefined ? normalized.replace : diff.newContent;
+
+        // Ensure required fields are present after setting defaults
+        if (normalized.search === undefined) {
             throw new Error(`Diff section ${index} missing required 'search' parameter`);
         }
-        if (normalized.replace === undefined && diff.newContent === undefined) {
+        if (normalized.replace === undefined) {
             throw new Error(`Diff section ${index} missing required 'replace' parameter`);
         }
-        
-        // Use new names if not already set
-        normalized.search = normalized.search || diff.originalContent || '';
-        normalized.replace = normalized.replace || diff.newContent || '';
+
+        // Set final defaults for empty values
+        normalized.search = normalized.search || '';
+        normalized.replace = normalized.replace || '';
+
+        // Additional validation: for regular diffs (not endLine: -1), search and replace cannot both be empty
+        if (diff.endLine !== -1 && normalized.search === '' && normalized.replace === '') {
+            throw new Error(`Diff section ${index} cannot have both empty 'search' and 'replace' parameters for regular diffs`);
+        }
 
         // Handle special case: endLine: -1 means replace from startLine to end of file
         if (diff.endLine === -1) {
@@ -1444,7 +1453,7 @@ async function validateDiffSections(
                     issues: []
                 });
                 continue;
-            } else if (diff.search.trim() === '' || (diff.startLine === 0 && diff.endLine === 0)) {
+            } else if ((diff.search === '' || diff.search.trim() === '') || (diff.startLine === 0 && diff.endLine === 0)) {
                 // Normal insert for new files
                 // Calculate how many lines this diff will add
                 const linesToAdd = diff.replace.split('\n').length;
@@ -1500,7 +1509,7 @@ async function validateDiffSections(
             const actualContent = lines.slice(diff.startLine).join('\n');
             
             // If search content is empty or matches the actual content, it's valid
-            const isValid = diff.search.trim() === '' || diff.search === actualContent;
+            const isValid = (diff.search === '' || diff.search.trim() === '') || diff.search === actualContent;
             
             if (isValid) {
                 matches.push({
