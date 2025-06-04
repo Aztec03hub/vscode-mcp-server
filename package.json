@@ -61,6 +61,7 @@
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
     "test": "vscode-test",
+    "test:shell": "npx @vscode/test-cli --run out/test/shell-tools/output-limiting.test.js --run out/test/shell-tools/output-limiting-verification.test.js --run out/test/shell-tools/shell-registry.test.js --run out/test/shell-tools/interactive-detection.test.js --run out/test/shell-tools/safety-warnings.test.js",
     "build": "echo '🔨 Building package...' && npx vsce package && echo '✅ Package built successfully!'",
     "install-extension": "echo '📦 Installing VSCode Extension...' && code --install-extension vscode-mcp-server-0.0.4.vsix --force && echo '✅ Extension installed successfully!'",
     "reload-extensions": "echo '🔄 Reloading VSCode Extensions...' && code -r . && echo '✅ VSCode Extensions reloaded successfully!'",
