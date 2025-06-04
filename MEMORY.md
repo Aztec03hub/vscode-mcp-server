@@ -3,14 +3,30 @@
 ## Purpose
 This file tracks important learnings, patterns, and decisions made during the development of the vscode-mcp-server project, currently focusing on shell tools implementation.
 
+## CRITICAL: UX Improvements Plan
+**IMPORTANT**: The `ux-improvements-plan.md` file is the **SINGLE SOURCE OF TRUTH** for all UX improvement work. Always refer to and update this file when working on UX-related tasks. It contains:
+- Current implementation status
+- Detailed task breakdowns with implementation steps
+- Code integration points
+- Testing protocols
+- Execution timeline with dependencies
+
 ## CRITICAL: Extension Testing Workflow
 **EXTREMELY IMPORTANT**: After making ANY code changes, and before running ANY tests, you MUST rebuild and reload the extension.
 
 ### ✨ NEW: Single Rebuild-and-Reload Script (✅ TESTED & WORKING)
 
-**Complete rebuild workflow with step-by-step feedback:**
-```bash
-npm run rebuild-and-reload
+**REQUIRED EXECUTION METHOD**: ALWAYS run rebuild-and-reload with:
+- `silenceOutput: true` - To prevent massive output that consumes context
+- `interactive: true` - To handle the longer execution time
+
+**Correct command:**
+```typescript
+execute_shell_command_code({
+    command: "npm run rebuild-and-reload",
+    silenceOutput: true,
+    interactive: true
+})
 ```
 
 **Output format:**
@@ -246,6 +262,74 @@ const DESTRUCTIVE_PATTERNS = [/\brm\s+-rf\b/, ...];
 - **Concurrent Testing**: Tests simulate real-world multiple shell scenarios
 
 **IMPACT**: The shell tools now have comprehensive, production-ready test coverage that validates all implemented features using real VS Code APIs, ensuring reliability and maintainability.
+
+## UX Improvements Implementation Progress (2025-06-04)
+
+### ✅ Task 1.2: Shell Auto-Approval Toggle - COMPLETED
+
+**What was implemented:**
+1. **State Management**: Added `shellAutoApprovalEnabled` boolean variable with persistence
+2. **Status Bar Item**: Created shell auto-approval status bar with:
+   - Icon: `$(shield)` 
+   - Priority: 98 (next to other status bars)
+   - Red background when enabled (danger indicator)
+   - Clear warning tooltips
+3. **Toggle Command**: Implemented `toggleShellAutoApproval` function with:
+   - Strong modal warning when enabling
+   - Clear confirmation requirements
+   - Immediate visual feedback
+4. **Export Function**: Added `isShellAutoApprovalEnabled()` for shell-tools integration
+5. **Shell Tools Integration**: Updated to use auto-approval check instead of hardcoded false
+
+**Key Safety Features:**
+- Modal warning with explicit danger message
+- Red status bar background when enabled
+- Requires "I Understand" confirmation
+- Never auto-enables in test mode (unlike apply_diff)
+- Logs warnings when executing destructive commands
+
+**Next Step**: Task 1.3 - Status Bar Approval Buttons System
+
+### ✅ Task 1.3: Status Bar Approval Buttons System - COMPLETED
+
+**What was implemented:**
+1. **ShellApprovalManager Class**: Complete implementation with:
+   - Temporary status bar buttons for approval/rejection
+   - 30-second timeout for auto-rejection
+   - Promise-based approval flow
+   - Proper cleanup of resources
+   - Comprehensive logging
+
+2. **Status Bar Buttons**:
+   - Accept button: `$(check) Accept` with green background (priority 101)
+   - Reject button: `$(x) Reject` with red background (priority 102)
+   - Dynamic tooltips showing the actual command
+   - Auto-dispose after user action or timeout
+
+3. **Command Registration**:
+   - `vscode-mcp-server.approveShellCommand` - Handles approval
+   - `vscode-mcp-server.rejectShellCommand` - Handles rejection
+
+4. **Export Function**: `requestShellCommandApproval(command, warning)`:
+   - Shows warning notification with "View Output" option
+   - Logs warning to output channel
+   - Returns Promise<boolean> for approval result
+
+5. **Shell Tools Integration**:
+   - Imported `requestShellCommandApproval` function
+   - Replaced blocking behavior with approval flow
+   - Different messages for approved vs rejected commands
+   - Maintains shell status correctly
+
+**Safety Flow Implemented**:
+1. Dangerous command detected
+2. Check if shell auto-approval is enabled
+3. If disabled: Show approval buttons and wait
+4. If approved: Execute with logged warning
+5. If rejected: Return cancellation message
+6. If timeout: Auto-reject after 30 seconds
+
+**Next Step**: Task 1.4 - Safety Testing Protocol
 
 ### ✅ CRITICAL SUCCESS: Shell Test Fixes Complete (2025-06-04)
 

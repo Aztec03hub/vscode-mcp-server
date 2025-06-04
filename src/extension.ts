@@ -15,9 +15,109 @@ let serverEnabled: boolean = false;
 // Auto-approval mode for apply_diff
 let autoApprovalEnabled: boolean = false;
 let autoApprovalStatusBar: vscode.StatusBarItem | undefined;
+// Shell auto-approval mode - DANGEROUS when enabled
+let shellAutoApprovalEnabled: boolean = false;
+let shellAutoApprovalStatusBar: vscode.StatusBarItem | undefined;
 
 // Terminal name constant
 const TERMINAL_NAME = 'MCP Shell Commands';
+
+/**
+ * Manages temporary status bar buttons for shell command approval
+ */
+class ShellApprovalManager {
+    private acceptButton?: vscode.StatusBarItem;
+    private rejectButton?: vscode.StatusBarItem;
+    private pendingCommand?: string;
+    private resolvePromise?: (approved: boolean) => void;
+    private timeoutId?: NodeJS.Timeout;
+
+    /**
+     * Shows approval buttons and waits for user response
+     * @param command The command to be executed
+     * @param warning The safety warning message
+     * @returns Promise that resolves to true if approved, false if rejected
+     */
+    async showApprovalButtons(command: string, warning: string): Promise<boolean> {
+        // Clean up any existing buttons first
+        this.cleanup();
+        
+        // Store the command for reference
+        this.pendingCommand = command;
+        
+        // Create the approval buttons
+        this.createApprovalButtons();
+        
+        // Set 30-second timeout for auto-reject
+        this.timeoutId = setTimeout(() => {
+            logger.warn('[ShellApprovalManager] Approval timeout - auto-rejecting command');
+            this.handleRejection();
+        }, 30000);
+        
+        // Return a promise that resolves when user makes a choice
+        return new Promise<boolean>((resolve) => {
+            this.resolvePromise = resolve;
+        });
+    }
+    
+    private createApprovalButtons() {
+        // Accept button (green background)
+        this.acceptButton = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right, 
+            101  // High priority to appear on the right
+        );
+        this.acceptButton.text = '$(check) Accept';
+        this.acceptButton.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+        this.acceptButton.command = 'vscode-mcp-server.approveShellCommand';
+        this.acceptButton.tooltip = `Execute the dangerous command: ${this.pendingCommand}`;
+        this.acceptButton.show();
+        
+        // Reject button (red background)
+        this.rejectButton = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right, 
+            102  // Highest priority to appear rightmost
+        );
+        this.rejectButton.text = '$(x) Reject';
+        this.rejectButton.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+        this.rejectButton.command = 'vscode-mcp-server.rejectShellCommand';
+        this.rejectButton.tooltip = 'Cancel the dangerous command';
+        this.rejectButton.show();
+        
+        logger.info(`[ShellApprovalManager] Showing approval buttons for command: ${this.pendingCommand}`);
+    }
+    
+    handleApproval() {
+        logger.info(`[ShellApprovalManager] Command approved: ${this.pendingCommand}`);
+        this.cleanup();
+        this.resolvePromise?.(true);
+    }
+    
+    handleRejection() {
+        logger.info(`[ShellApprovalManager] Command rejected: ${this.pendingCommand}`);
+        this.cleanup();
+        this.resolvePromise?.(false);
+    }
+    
+    private cleanup() {
+        // Dispose buttons
+        this.acceptButton?.dispose();
+        this.rejectButton?.dispose();
+        this.acceptButton = undefined;
+        this.rejectButton = undefined;
+        
+        // Clear timeout
+        if (this.timeoutId) {
+            clearTimeout(this.timeoutId);
+            this.timeoutId = undefined;
+        }
+        
+        // Clear pending command
+        this.pendingCommand = undefined;
+    }
+}
+
+// Create singleton instance
+let shellApprovalManager: ShellApprovalManager | undefined;
 
 /**
  * Gets or creates the shared terminal for the extension
@@ -77,6 +177,23 @@ function updateAutoApprovalStatusBar() {
     }
 }
 
+// Function to update shell auto-approval status bar
+function updateShellAutoApprovalStatusBar() {
+    if (!shellAutoApprovalStatusBar) {
+        return;
+    }
+
+    if (shellAutoApprovalEnabled) {
+        shellAutoApprovalStatusBar.text = '$(shield) Shell Auto-Approve: ON';
+        shellAutoApprovalStatusBar.tooltip = '⚠️ DANGEROUS: Shell commands execute automatically without safety checks! (Click to disable)';
+        shellAutoApprovalStatusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+    } else {
+        shellAutoApprovalStatusBar.text = '$(shield) Shell Auto-Approve: OFF';
+        shellAutoApprovalStatusBar.tooltip = 'Shell command safety checks are ENABLED - destructive commands require approval (Click to enable auto-approval)';
+        shellAutoApprovalStatusBar.backgroundColor = undefined;
+    }
+}
+
 // Function to toggle auto-approval mode
 async function toggleAutoApproval(context: vscode.ExtensionContext) {
     autoApprovalEnabled = !autoApprovalEnabled;
@@ -106,6 +223,42 @@ async function toggleAutoApproval(context: vscode.ExtensionContext) {
     }
 }
 
+// Function to toggle shell auto-approval mode
+async function toggleShellAutoApproval(context: vscode.ExtensionContext) {
+    shellAutoApprovalEnabled = !shellAutoApprovalEnabled;
+    
+    // Save state
+    await context.globalState.update('shellAutoApprovalEnabled', shellAutoApprovalEnabled);
+    
+    // Update status bar
+    updateShellAutoApprovalStatusBar();
+    
+    // Show strong warning when enabling
+    if (shellAutoApprovalEnabled) {
+        const result = await vscode.window.showWarningMessage(
+            '🚨 DANGER: Shell Auto-Approval Mode ENABLED!\n\n' +
+            'Destructive shell commands (rm -rf, format, etc.) will execute automatically WITHOUT confirmation!\n\n' +
+            'This mode bypasses ALL safety checks and can cause irreversible damage to your system.\n\n' +
+            'Only enable this if you fully understand the risks.',
+            { modal: true },
+            'I Understand - Keep Enabled',
+            'Disable (Recommended)'
+        );
+        
+        if (result !== 'I Understand - Keep Enabled') {
+            shellAutoApprovalEnabled = false;
+            await context.globalState.update('shellAutoApprovalEnabled', false);
+            updateShellAutoApprovalStatusBar();
+            vscode.window.showInformationMessage('Shell Auto-Approval Mode disabled. Safety checks remain active.');
+        } else {
+            // Show additional confirmation in output
+            logger.warn('⚠️ SHELL AUTO-APPROVAL ENABLED - Destructive commands will execute without confirmation!');
+        }
+    } else {
+        vscode.window.showInformationMessage('Shell Auto-Approval Mode disabled. Destructive commands will require approval.');
+    }
+}
+
 // Test mode flag - set by tests to enable auto-approval
 let testModeEnabled = false;
 
@@ -125,6 +278,38 @@ export function isAutoApprovalEnabled(): boolean {
         return true;
     }
     return autoApprovalEnabled;
+}
+
+// Export function for shell tools to check shell auto-approval status
+export function isShellAutoApprovalEnabled(): boolean {
+    // NEVER auto-approve shell commands in test mode for safety
+    // Shell commands can be destructive, so require explicit enabling
+    return shellAutoApprovalEnabled;
+}
+
+// Export function for shell tools to request command approval
+export async function requestShellCommandApproval(command: string, warning: string): Promise<boolean> {
+    if (!shellApprovalManager) {
+        logger.error('[requestShellCommandApproval] ShellApprovalManager not initialized');
+        return false;
+    }
+    
+    // Show warning in output channel
+    vscode.window.showWarningMessage(
+        `⚠️ Dangerous command detected: ${command}`,
+        'View Output'
+    ).then(selection => {
+        if (selection === 'View Output') {
+            logger.showChannel();
+        }
+    });
+    
+    // Log the warning
+    logger.warn(`[Shell Command Approval] ${warning}`);
+    logger.warn(`[Shell Command Approval] Command: ${command}`);
+    
+    // Show approval buttons and wait for response
+    return shellApprovalManager.showApprovalButtons(command, warning);
 }
 
 // Function to toggle server state
@@ -211,10 +396,15 @@ export async function activate(context: vscode.ExtensionContext) {
         // Load saved state or use configured default
         serverEnabled = context.globalState.get('mcpServerEnabled', defaultEnabled);
         autoApprovalEnabled = context.globalState.get('autoApprovalEnabled', false);
+        shellAutoApprovalEnabled = context.globalState.get('shellAutoApprovalEnabled', false);
         
         logger.info(`[activate] Using port ${port} from configuration`);
         logger.info(`[activate] Server enabled: ${serverEnabled}`);
         logger.info(`[activate] Auto-approval enabled: ${autoApprovalEnabled}`);
+        logger.info(`[activate] Shell auto-approval enabled: ${shellAutoApprovalEnabled}`);
+        
+        // Initialize the shell approval manager
+        shellApprovalManager = new ShellApprovalManager();
 
         // Create server status bar item
         statusBarItem = vscode.window.createStatusBarItem(
@@ -234,6 +424,16 @@ export async function activate(context: vscode.ExtensionContext) {
         autoApprovalStatusBar.show();
         updateAutoApprovalStatusBar();
         context.subscriptions.push(autoApprovalStatusBar);
+        
+        // Create shell auto-approval status bar item
+        shellAutoApprovalStatusBar = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            98  // Priority next to other status bars
+        );
+        shellAutoApprovalStatusBar.command = 'vscode-mcp-server.toggleShellAutoApproval';
+        shellAutoApprovalStatusBar.show();
+        updateShellAutoApprovalStatusBar();
+        context.subscriptions.push(shellAutoApprovalStatusBar);
         
         // Only start the server if enabled
         if (serverEnabled) {
@@ -287,6 +487,30 @@ export async function activate(context: vscode.ExtensionContext) {
             () => toggleAutoApproval(context)
         );
         
+        const toggleShellAutoApprovalCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleShellAutoApproval',
+            () => toggleShellAutoApproval(context)
+        );
+        
+        // Register shell command approval/rejection commands
+        const approveShellCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.approveShellCommand',
+            () => {
+                if (shellApprovalManager) {
+                    shellApprovalManager.handleApproval();
+                }
+            }
+        );
+        
+        const rejectShellCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.rejectShellCommand',
+            () => {
+                if (shellApprovalManager) {
+                    shellApprovalManager.handleRejection();
+                }
+            }
+        );
+        
         // Add command to check auto-approval status (for tests)
         const isAutoApprovalEnabledCommand = vscode.commands.registerCommand(
             'vscode-mcp-server.isAutoApprovalEnabled',
@@ -329,6 +553,9 @@ export async function activate(context: vscode.ExtensionContext) {
             toggleServerCommand,
             showServerInfoCommand,
             toggleAutoApprovalCommand,
+            toggleShellAutoApprovalCommand,
+            approveShellCommand,
+            rejectShellCommand,
             isAutoApprovalEnabledCommand,
             applyDiffCommand,
             configChangeListener,
@@ -349,6 +576,11 @@ export async function deactivate() {
     if (autoApprovalStatusBar) {
         autoApprovalStatusBar.dispose();
         autoApprovalStatusBar = undefined;
+    }
+    
+    if (shellAutoApprovalStatusBar) {
+        shellAutoApprovalStatusBar.dispose();
+        shellAutoApprovalStatusBar = undefined;
     }
 
     // Dispose the shared terminal

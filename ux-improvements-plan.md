@@ -8,6 +8,13 @@
 
 **Example**: When `format C:` was executed, it showed a warning but then actually attempted to format the C: drive. We were only saved by insufficient permissions.
 
+**Current State (2025-06-04)**:
+- `detectDestructiveCommand` function is working correctly and detecting patterns
+- Commands are currently **BLOCKED** when detected (returns error message)
+- Auto-approval check is hardcoded to `false` (placeholder)
+- Shell auto-approval toggle is marked as completed but **NOT IMPLEMENTED**
+- Only apply_diff auto-approval exists, not shell auto-approval
+
 ---
 
 ## 📋 COMPREHENSIVE TASK BREAKDOWN
@@ -28,44 +35,68 @@
       }
   }
   ```
-- **Integration**: Create new status bar approval system (different from apply_diff modal)
-- **Status**: ⬜ Not Started
+  - **Integration**: Create new status bar approval system (different from apply_diff modal)
+  - **Status**: ⬜ Not Started
 
 #### Task 1.2: Shell Auto-Approval Toggle
-- **File**: `src/extension.ts`
-- **Add**: `autoApprovalShellEnabled` state management
-- **Add**: Status bar toggle (temporary, will be moved to menu in Phase 2)
-- **Status**: ✅ COMPLETED
+  - **File**: `src/extension.ts`
+  - **Status**: ✅ COMPLETED
+  - **Implementation Steps**:
+  1. Add `shellAutoApprovalEnabled` variable (default: false)
+  2. Create shell auto-approval status bar item:
+     ```typescript
+     shellAutoApprovalStatusBar = vscode.window.createStatusBarItem(
+         vscode.StatusBarAlignment.Right,
+         98  // Priority next to other status bars
+     );
+     ```
+  3. Add toggle command `vscode-mcp-server.toggleShellAutoApproval`
+  4. Implement `toggleShellAutoApproval` function with modal warning
+  5. Add persistence with `context.globalState`
+  6. Export `isShellAutoApprovalEnabled()` function
+  7. Update `shell-tools.ts` to import and use this function
 
 #### Task 1.3: Status Bar Approval Buttons System
 - **File**: `src/extension.ts`
-- **Implementation**:
-  ```typescript
-  // Approval button specifications
-  const acceptButton = {
-      text: "$(check) Accept",
-      backgroundColor: new vscode.ThemeColor('statusBarItem.prominentBackground'), // Green
-      command: 'vscode-mcp-server.approveShellCommand'
-  };
-  
-  const rejectButton = {
-      text: "$(x) Reject", 
-      backgroundColor: new vscode.ThemeColor('statusBarItem.errorBackground'), // Red
-      command: 'vscode-mcp-server.rejectShellCommand'
-  };
-  ```
-- **Behavior**:
-  - Show buttons when dangerous command detected
-  - Auto-hide after 30 seconds (default reject)
-  - Remove buttons immediately after user choice
-  - Store pending command context for approval/rejection
-- **Status**: ⬜ Not Started
+- **Status**: ✅ COMPLETED
+  - **Implementation Steps**:
+  1. Create `ShellApprovalManager` class:
+     ```typescript
+     class ShellApprovalManager {
+         private acceptButton?: vscode.StatusBarItem;
+         private rejectButton?: vscode.StatusBarItem;
+         private pendingCommand?: string;
+         private resolvePromise?: (approved: boolean) => void;
+         private timeoutId?: NodeJS.Timeout;
+         
+         async showApprovalButtons(command: string, warning: string): Promise<boolean>
+         private createApprovalButtons()
+         handleApproval()
+         handleRejection()
+         private cleanup()
+     }
+     ```
+  2. Register commands:
+     - `vscode-mcp-server.approveShellCommand`
+     - `vscode-mcp-server.rejectShellCommand`
+  3. Export `requestShellCommandApproval` function
+  4. Update `shell-tools.ts` to:
+     - Import approval function
+     - Call when dangerous command detected
+     - Wait for response before proceeding
 
 #### Task 1.4: Safety Testing Protocol
-- **Rule**: **NEVER test with real destructive commands**
-- **Safe Testing**: Create temp files only: `echo "test" > temp.txt && rm temp.txt`
-- **Add**: Test cases with mock commands in test suite
 - **Status**: ⬜ Not Started
+- **Testing Steps**:
+  1. Create test file: `echo "test" > test-file.txt`
+  2. Test command: `rm test-file.txt` (ONLY safe test command allowed)
+  3. Verify approval dialog appears
+  4. Test "Accept" flow - file should be deleted
+  5. Create another test file and test "Reject" flow - file should remain
+  6. Test 30-second timeout - should auto-reject
+  7. Enable shell auto-approval and verify no dialog appears
+  8. Test with safe commands - should execute without approval
+- **Logging**: Add comprehensive console.log statements for debugging
 
 ---
 
@@ -290,96 +321,68 @@ import {
 } from 'vscode'
 ```
 
-### **Status Bar Approval Button Implementation**
+### **Implementation Order and Dependencies**
 
-```typescript
-// Approval button manager
-class ShellApprovalManager {
-    private acceptButton?: vscode.StatusBarItem;
-    private rejectButton?: vscode.StatusBarItem;
-    private pendingCommand?: string;
-    private resolvePromise?: (approved: boolean) => void;
-    private timeoutId?: NodeJS.Timeout;
+**CRITICAL**: Tasks must be implemented in this specific order due to dependencies:
 
-    async showApprovalButtons(command: string, warning: string): Promise<boolean> {
-        // Create temporary status bar buttons
-        this.createApprovalButtons();
-        this.pendingCommand = command;
-        
-        // Set 30-second timeout for auto-reject
-        this.timeoutId = setTimeout(() => {
-            this.handleRejection();
-        }, 30000);
-        
-        // Return promise that resolves when user chooses
-        return new Promise<boolean>((resolve) => {
-            this.resolvePromise = resolve;
-        });
-    }
+1. **Task 1.2** (Shell Auto-Approval Toggle) - Foundation for approval system
+    2. **Task 1.3** (Approval Buttons) - Depends on 1.2 for auto-approval check
+    3. **Task 1.4** (Testing) - Requires 1.2 and 1.3 to be complete
+    4. **Phase 2-5** - Can proceed after Phase 1 is complete
+
+    ### **Code Integration Points**
+
+    #### **Extension.ts Exports Required**:
+        ```typescript
+        // For shell-tools.ts to import
+        export function isShellAutoApprovalEnabled(): boolean
+        export async function requestShellCommandApproval(command: string, warning: string): Promise<boolean>
+        ```
+
+            #### **Shell-tools.ts Integration**:
+        ```typescript
+        import { isShellAutoApprovalEnabled, requestShellCommandApproval } from '../extension';
+
+        // In execute_shell_command_code tool:
+            if (safetyWarning) {
+    const autoApprovalEnabled = isShellAutoApprovalEnabled();
     
-    private createApprovalButtons() {
-        // Accept button (green)
-        this.acceptButton = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right, 101
-        );
-        this.acceptButton.text = '$(check) Accept';
-        this.acceptButton.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-        this.acceptButton.command = 'vscode-mcp-server.approveShellCommand';
-        this.acceptButton.tooltip = 'Execute the dangerous command';
-        this.acceptButton.show();
-        
-        // Reject button (red)
-        this.rejectButton = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right, 102
-        );
-        this.rejectButton.text = '$(x) Reject';
-        this.rejectButton.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-        this.rejectButton.command = 'vscode-mcp-server.rejectShellCommand';
-        this.rejectButton.tooltip = 'Cancel the dangerous command';
-        this.rejectButton.show();
-    }
-    
-    handleApproval() {
-        this.cleanup();
-        this.resolvePromise?.(true);
-    }
-    
-    handleRejection() {
-        this.cleanup();
-        this.resolvePromise?.(false);
-    }
-    
-    private cleanup() {
-        this.acceptButton?.dispose();
-        this.rejectButton?.dispose();
-        this.acceptButton = undefined;
-        this.rejectButton = undefined;
-        if (this.timeoutId) {
-            clearTimeout(this.timeoutId);
-            this.timeoutId = undefined;
+    if (!autoApprovalEnabled) {
+        const approved = await requestShellCommandApproval(command, safetyWarning);
+        if (!approved) {
+            registry.updateShellStatus(managedShell.id, 'idle');
+            return createErrorResult("Command cancelled by user due to safety concerns");
         }
     }
-}
-```
+    // If auto-approved or user approved, continue with execution
+        }
+        ```
 
 ---
 
 ## ⚡ EXECUTION TIMELINE
 
-### **Week 1: Critical Safety (Phase 1)**
-- **Day 1-2**: ⬜ Implement shell command approval system
-- **Day 3**: ⬜ Add shell auto-approval toggle
-- **Day 4-5**: ⬜ Create safety testing protocol and tests
+### **Immediate Implementation (Phase 1 - Critical Safety)**
+**Must be completed in order:**
+1. **Task 1.2**: Shell Auto-Approval Toggle (1-2 hours)
+2. **Task 1.3**: Approval Buttons System (2-3 hours)
+3. **Task 1.4**: Safety Testing (1 hour)
 
-### **Week 2: Menu System (Phase 2)**
-- **Day 1-2**: ⬜ Design and implement main menu button
-- **Day 3-4**: ⬜ Build popup menu system
-- **Day 5**: ⬜ Integrate existing features into menu
+### **Week 1: Complete Phase 1 + Start Phase 2**
+- **Day 1**: ⬜ Tasks 1.2 and 1.3 (Shell auto-approval + approval buttons)
+- **Day 2**: ⬜ Task 1.4 (Safety testing) + Bug fixes
+- **Day 3-4**: ⬜ Phase 2 - Main menu button design
+- **Day 5**: ⬜ Phase 2 - Popup menu implementation
 
-### **Week 3: Polish & Testing (Phases 3-5)**
-- **Day 1-2**: ⬜ Implement visual design system
-- **Day 3**: ⬜ Enhance UX flows
-- **Day 4-5**: ⬜ Comprehensive testing and bug fixes
+### **Week 2: Complete Phase 2 + Phase 3**
+- **Day 1-2**: ⬜ Phase 2 - Menu integration and testing
+- **Day 3-4**: ⬜ Phase 3 - Visual design system
+- **Day 5**: ⬜ Phase 4 - Enhanced UX flows
+
+### **Week 3: Polish & Testing**
+- **Day 1-2**: ⬜ Phase 5 - Comprehensive testing
+- **Day 3-4**: ⬜ Bug fixes and refinements
+- **Day 5**: ⬜ Documentation and release prep
 
 ---
 
@@ -431,8 +434,10 @@ class ShellApprovalManager {
 
 ## 📝 NOTES
 
+- **Single Source of Truth**: This document is the authoritative plan for all UX improvements
 - **Priority**: Safety fixes are non-negotiable and must be completed first
-- **Testing**: All changes must be tested with safe commands only
+- **Testing**: All changes must be tested with safe commands only (`rm test-file.txt`)
+- **Implementation Order**: Tasks 1.2 → 1.3 → 1.4 must be done sequentially
 - **Compatibility**: Maintain support for existing MCP tool consumers
 - **Documentation**: Update all relevant docs and help text
 - **Code Review**: All safety-related changes require thorough review

@@ -3,6 +3,7 @@ import * as path from 'path';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from 'zod';
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import { isShellAutoApprovalEnabled, requestShellCommandApproval } from '../extension';
 
 // Configuration constants for shell integration timeouts and delays
 const SHELL_INTEGRATION_TIMEOUT_MS = 5000; // 5 seconds to wait for shell integration
@@ -836,27 +837,36 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     console.warn(`[Shell Tools] Safety Warning: ${safetyWarning}`);
                     
                     // CRITICAL SAFETY CHECK: Stop execution until user approval
-                    // TODO: Check auto-approval setting from extension state
-                    const autoApprovalEnabled = false; // Placeholder - will be implemented in Task 1.2
+                    const autoApprovalEnabled = isShellAutoApprovalEnabled();
                     
                     if (!autoApprovalEnabled) {
-                        // TODO: Show status bar approval buttons (Task 1.3)
-                        // For now, block execution and return error
-                        registry.updateShellStatus(managedShell.id, 'idle');
+                        // Request approval via status bar buttons
+                        console.log(`[Shell Tools] Requesting user approval for dangerous command: ${command}`);
                         
-                        return {
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: `${safetyWarning}\n\n` +
-                                          `**Command:** ${command}\n\n` +
-                                          `**🛡️ EXECUTION BLOCKED FOR SAFETY**\n` +
-                                          `This command has been blocked to prevent potential damage. ` +
-                                          `Status bar approval buttons will be implemented in Task 1.3.\n\n` +
-                                          `To override: Enable shell auto-approval mode (Task 1.2) or wait for approval system implementation.`
-                                }
-                            ]
-                        };
+                        const approved = await requestShellCommandApproval(command, safetyWarning);
+                        
+                        if (!approved) {
+                            // User rejected the command
+                            registry.updateShellStatus(managedShell.id, 'idle');
+                            
+                            return {
+                                content: [
+                                    {
+                                        type: 'text',
+                                        text: `${safetyWarning}\n\n` +
+                                              `**Command:** ${command}\n\n` +
+                                              `**� Command cancelled by user**\n\n` +
+                                              `The command was not executed due to safety concerns.`
+                                    }
+                                ]
+                            };
+                        }
+                        
+                        // User approved - continue with execution
+                        console.log(`[Shell Tools] User approved execution of dangerous command: ${command}`);
+                    } else {
+                        // Auto-approval is enabled - log warning but continue
+                        console.warn(`[Shell Tools] ⚠️ Shell auto-approval is ENABLED - executing destructive command: ${command}`);
                     }
                 }
                 
