@@ -6,34 +6,35 @@ Implement enhanced shell management tools for the vscode-mcp-server project, inc
 ## � Current Implementation Status (2025-06-04)
 
 ### ✅ COMPLETED FEATURES
-**Phase 1: Core Shell Infrastructure** - 100% Complete
-- Shell Registry System with auto-cleanup and resource management
-- Workspace Context Tool with project detection
-- Enhanced Shell Command Execution with timeout strategies and background support
+**Phase 1: Core Shell Infrastructure** - 100% Complete ✅
+- ✅ Shell Registry System with auto-cleanup and resource management
+- ✅ Workspace Context Tool with project detection
+- ✅ Enhanced Shell Command Execution with timeout strategies and background support
 
-**Phase 2: Interactive Support** - 50% Complete
+**Phase 2: Interactive Support** - 100% Complete ✅
 - ✅ Input injection tool (`send_input_to_shell`)
-- 🔲 Pattern-based interactive prompt detection (timeout strategies implemented)
+- ✅ Timeout-based interactive detection (15s default, 45s interactive, immediate background)
 
-**Phase 3: Shell Management** - 60% Complete
+**Phase 3: Shell Management** - 100% Complete ✅
 - ✅ Shell listing tool (`list_active_shells`)
-- 🔲 Dedicated shell creation MCP tool (functionality exists in registry)
-- 🔲 Dedicated shell management MCP tools (functionality exists in registry)
+- ✅ Shell registry with complete creation/management functionality
+- ✅ Error handling and lifecycle management (via registry methods)
 
 **Phase 5: Integration** - 80% Complete
 - ✅ Server registration and error handling
 - 🔲 Manual testing scenarios
 
 ### 🔲 PENDING FEATURES
-**Phase 4: Output & Safety** - 10% Complete
-- Constants defined but output limiting logic not implemented
-- Destructive command detection not implemented
+**Phase 4: Output & Safety** - 0% Complete
+- 🔲 Output limiting logic (character-based with file output - per user requirements)
+- 🔲 Destructive command detection (simple regex pattern matching - per user requirements)
 
-### 🎯 IMMEDIATE NEXT STEPS
-1. **Output Limiting Implementation** (Task 4.1)
-2. **Safety Warnings Implementation** (Task 4.2)
-3. **Dedicated MCP Tools** for shell creation/management (Tasks 3.2/3.3)
-4. **Manual Testing Setup** (Task 5.2)
+### 🎯 IMMEDIATE NEXT STEPS (Updated Based on User Requirements)
+1. **Output Limiting Implementation** (Task 4.1) - Character-based with 100k max, silence flag, auto-file save
+2. **Safety Warnings Implementation** (Task 4.2) - Simple regex pattern matching 
+3. **Interactive Pattern Detection** (Task 2.1) - Regex + keyword detection for common prompts
+4. **Manual Testing Setup** (Task 5.2) - Automated tests + documentation
+5. **Optional: Dedicated MCP Shell Management Tools** (Tasks 3.2/3.3) - Simple wrappers only
 
 ## �📋 Implementation Tasks
 #### Task 1.1: Create Shell Registry System ✅ COMPLETED
@@ -72,16 +73,18 @@ Implement enhanced shell management tools for the vscode-mcp-server project, inc
 
 ### Phase 2: Interactive Command Support
 
-#### Task 2.1: Implement Output Pattern Detection
+#### Task 2.1: Implement Interactive Pattern Detection (NEW REQUIREMENT)
 - **File**: `src/tools/shell-tools.ts`
-- **Description**: Add smart detection for interactive prompts
+- **Description**: Add regex and keyword-based detection for interactive prompts
 - **Details**:
-  - Detect common interactive patterns (`?`, `(y/n)`, `Press any key`, etc.)
-  - Implement timeout strategy:
+  - 🔲 Implement regex patterns for common prompts (y/n, continue, password, etc.)
+  - 🔲 Add simple keyword-based detection
+  - ✅ Timeout strategy already implemented:
     - ✅ Default mode: 15-second timeout
     - ✅ Interactive mode: 45-second timeout
     - ✅ Background mode: Return immediately
-  - Return special status for "waiting-for-input" state
+  - 🔲 Auto-detect interactive state and switch to waiting-for-input mode
+  - **Status**: Timeout strategies complete, pattern detection needed
 
 #### Task 2.2: Add Input Injection Tool ✅ COMPLETED
 - **File**: `src/tools/shell-tools.ts`
@@ -126,25 +129,28 @@ Implement enhanced shell management tools for the vscode-mcp-server project, inc
 
 ### Phase 4: Output Management & Safety
 
-#### Task 4.1: Implement Output Limits
+#### Task 4.1: Implement Output Limits (UPDATED REQUIREMENTS)
 - **File**: `src/tools/shell-tools.ts`
-- **Description**: Add line-based output limiting
+- **Description**: Add character-based output limiting with file output
 - **Details**:
-  - ✅ Default limit: 1000 lines per command output (constant defined)
-  - 🔲 Make limit configurable via tool parameter
-  - 🔲 Add option to disable limits entirely
-  - 🔲 Truncate output gracefully with clear indicators
-  - **Status**: Constants defined but limiting logic not implemented
+  - 🔲 Character-based limiting: 100,000 characters maximum (not line-based)
+  - 🔲 Add `silenceOutput` flag/option for long-running commands
+  - 🔲 Auto-save full output to `{shellId}-output.txt` when truncated
+  - 🔲 Overwrite output file per shell instance on each command
+  - 🔲 Auto-cleanup output files when shell times out/closes
+  - 🔲 Return message about truncation and file location
+  - **Status**: New character-based approach, file output feature
 
-#### Task 4.2: Add Simple Safety Warnings
+#### Task 4.2: Add Simple Safety Warnings (CONFIRMED APPROACH)
 - **File**: `src/tools/shell-tools.ts`
-- **Description**: Basic destructive command detection
+- **Description**: Basic destructive command detection using simple regex
   - **Details**:
-  - 🔲 Simple pattern matching for dangerous commands
-  - 🔲 Warn about: `rm -rf`, `del /s`, `format`, `rmdir /s`
-  - 🔲 Keep implementation very simple - just pattern matching
-  - 🔲 Don't block commands, just warn
-  - **Status**: Not yet implemented
+  - 🔲 Simple regex pattern matching for dangerous commands
+  - 🔲 Warn about: `rm -rf`, `del /s`, `format`, `rmdir /s`, and similar patterns
+  - 🔲 Keep implementation very simple - just pattern matching (no sophistication)
+  - 🔲 Don't block commands, just provide warnings in output
+  - 🔲 Include destructive command warnings in command execution results
+  - **Status**: Simple regex approach confirmed
 
 ### Phase 5: Integration & Testing
 
@@ -156,15 +162,19 @@ Implement enhanced shell management tools for the vscode-mcp-server project, inc
   - ✅ Imports are properly configured
   - ✅ Tools: execute_shell_command_code, get_workspace_context, send_input_to_shell, test_shell_cwd, list_active_shells
 
-#### Task 5.2: Manual Testing Setup
-- **File**: `src/test/manual-testing.ts` (if needed)
-- **Description**: Create manual testing scenarios
+#### Task 5.2: Manual Testing Setup (UPDATED REQUIREMENTS)
+- **File**: `src/test/manual-testing.ts` and documentation
+- **Description**: Create automated test files AND manual testing documentation
 - **Details**:
+  - 🔲 Create automated test files for shell functionality
+  - 🔲 Write manual testing documentation for complex scenarios
   - 🔲 Test with SvelteKit scaffolding (`npm create svelte@latest`)
-  - 🔲 Test multiple shell management
-  - 🔲 Test interactive command handling
+  - 🔲 Test multiple shell management and cleanup
+  - 🔲 Test interactive command handling with pattern detection
   - 🔲 Test background processes (`npm run dev`)
-  - **Status**: No formal testing setup created yet
+  - 🔲 Test output limiting and file generation
+  - 🔲 Test safety warnings for destructive commands
+  - **Status**: Both automated and manual testing needed
 
 #### Task 5.3: Error Handling & Cleanup ✅ MOSTLY COMPLETED
 - **File**: `src/tools/shell-tools.ts`
@@ -196,7 +206,7 @@ interface ManagedShell {
 ```typescript
 const MAX_SHELLS = 8;
 const SHELL_CLEANUP_TIMEOUT = 5 * 60 * 1000; // 5 minutes
-const DEFAULT_OUTPUT_LINE_LIMIT = 1000;
+const DEFAULT_OUTPUT_CHARACTER_LIMIT = 100000; // 100k characters (updated requirement)
 const INTERACTIVE_TIMEOUT_MS = 45000; // 45 seconds
 const DEFAULT_TIMEOUT_MS = 15000; // 15 seconds
 ```
@@ -209,6 +219,48 @@ const DESTRUCTIVE_PATTERNS = [
   /\bformat\b/i,
   /\brmdir\s+\/s\b/i
 ];
+```
+
+### Interactive Prompt Detection Patterns (New Requirement)
+```typescript
+const INTERACTIVE_PATTERNS = [
+  /\?\s*$/,                    // Questions ending with ?
+  /\(y\/n\)/i,                 // Yes/no prompts
+  /\(Y\/N\)/,                  // Yes/No prompts (case sensitive)
+  /continue\?/i,               // Continue prompts
+  /press\s+any\s+key/i,        // Press any key
+  /enter\s+password/i,         // Password prompts
+  /confirm/i                   // Confirmation prompts
+];
+
+const INTERACTIVE_KEYWORDS = [
+  'password:', 'confirm:', 'continue?', 'proceed?', 
+  'y/n', 'yes/no', 'press any key'
+];
+```
+
+### Output File Management (New Requirement)
+```typescript
+// Output files: {shellId}-output.txt (e.g., "shell-1-output.txt")
+// Location: .vscode-mcp-output/ directory in workspace root
+// Cleanup: Automatic when shell closes or times out
+// Behavior: Overwrite on each command execution per shell
+// Silence flag: Return "Command completed, full output saved to file <filename>"
+```
+
+### Interactive Detection Priority (User Specified)
+```typescript
+// Priority order:
+// 1. Keywords take precedence
+// 2. Regex patterns secondary
+// 3. Trigger on either match
+```
+
+### Testing Structure (User Specified)
+```typescript
+// Location: src/test/shell-tools/
+// Files: Automated tests + manual documentation
+// Scenarios: SvelteKit, multiple shells, interactive, background, new features
 ```
 
 ## 🎯 Success Criteria

@@ -139,6 +139,60 @@ const COMMAND_DELAY_MS = 50; // PowerShell workaround
 
 **Test Results**: Functionality working correctly - logs show successful detection and processing of endLine: -1 with expected behavior for full file replacement scenarios.
 
+## Shell Tools Implementation Status (2025-06-04)
+
+### ✅ COMPLETED CORE FEATURES
+- **Shell Registry System**: Complete with auto-cleanup, resource management, lifecycle tracking
+- **Multiple Shell Support**: Up to 8 concurrent shells with auto-generated IDs
+- **Command Execution**: Enhanced with timeout strategies, background support, directory tracking
+- **Interactive Support**: Input injection tool, timeout-based detection
+- **Shell Management**: Listing, status tracking, error handling
+- **Workspace Context**: Project detection, working directory management
+
+### 🎯 IMMEDIATE PRIORITIES (Based on User Requirements)
+
+#### 1. Output Limiting (Task 4.1) - Character-Based Implementation
+**Requirements**: 
+- 100,000 character limit (not line-based)
+- `silenceOutput` flag for long commands
+- Auto-save to `{shellId}-output.txt` when truncated
+- Overwrite file per shell on each command
+- Auto-cleanup when shell closes/times out
+- Clear truncation messages with file location
+
+#### 2. Safety Warnings (Task 4.2) - Simple Regex Detection
+**Requirements**:
+- Simple regex pattern matching only
+- Detect: `rm -rf`, `del /s`, `format`, `rmdir /s`
+- Warning only - don't block commands
+- Include warnings in command execution results
+
+#### 3. Interactive Pattern Detection (Task 2.1) - Regex + Keywords
+**Requirements**:
+- Regex patterns for common prompts (y/n, continue, password)
+- Simple keyword-based detection
+- Auto-switch to waiting-for-input mode
+- Leverage existing timeout strategies (15s/45s/immediate)
+
+#### 4. Testing Implementation (Task 5.2) - Automated + Manual
+**Requirements**:
+- Create automated test files
+- Write manual testing documentation  
+- Test scenarios: SvelteKit scaffolding, multiple shells, interactive commands, background processes
+- Test new features: output limiting, safety warnings, pattern detection
+
+#### 5. Optional: MCP Shell Management Tools (Tasks 3.2/3.3)
+**Requirements**: Simple wrappers only - no additional features beyond registry
+
+### 🔧 Technical Implementation Notes
+```typescript
+// New constants needed
+const DEFAULT_OUTPUT_CHARACTER_LIMIT = 100000;
+const INTERACTIVE_PATTERNS = [/\?\s*$/, /\(y\/n\)/i, ...];
+const INTERACTIVE_KEYWORDS = ['password:', 'y/n', ...];
+const DESTRUCTIVE_PATTERNS = [/\brm\s+-rf\b/, ...];
+```
+
 ## Future Considerations
 - Performance optimization for output handling in long-running processes
 - Advanced shell features (environment variables, history, completion)
