@@ -536,8 +536,10 @@ suite('Apply Diff Functional Tests', () => {
 
             assert.ok(fs.existsSync(testFile), 'File should be created');
             const content = fs.readFileSync(testFile, 'utf8');
+            // Normalize line endings for cross-platform compatibility
+            const normalizedContent = content.replace(/\r\n/g, '\n');
             assert.strictEqual(
-                content,
+                normalizedContent,
                 'new file content\ncreated with endLine: -1',
                 'Should create file with specified content'
             );

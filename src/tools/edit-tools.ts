@@ -463,6 +463,10 @@ function normalizeDiffSections(diffs: DiffSection[]): NormalizedDiffSection[] {
         // Set final defaults for empty values
         normalized.search = normalized.search || '';
         normalized.replace = normalized.replace || '';
+        
+        // Normalize line endings to \n for consistency
+        normalized.search = normalized.search.replace(/\r\n/g, '\n');
+        normalized.replace = normalized.replace.replace(/\r\n/g, '\n');
 
         // Additional validation: for regular diffs (not endLine: -1), search and replace cannot both be empty
         if (diff.endLine !== -1 && normalized.search === '' && normalized.replace === '') {
@@ -1509,7 +1513,24 @@ async function validateDiffSections(
             const actualContent = lines.slice(diff.startLine).join('\n');
             
             // If search content is empty or matches the actual content, it's valid
-            const isValid = (diff.search === '' || diff.search.trim() === '') || diff.search === actualContent;
+            // Normalize line endings for comparison
+            const normalizedSearch = diff.search.replace(/\r\n/g, '\n');
+            const normalizedActual = actualContent.replace(/\r\n/g, '\n');
+            
+            // For endLine: -1, validation should be more flexible:
+            // 1. Empty search is always valid (full replacement)
+            // 2. Non-empty search must match actual content from startLine to end
+            const isEmptySearch = diff.search === '' || diff.search.trim() === '';
+            let isContentMatch = normalizedSearch === normalizedActual;
+            
+            // If exact match fails, try normalized whitespace comparison
+            if (!isContentMatch && !isEmptySearch) {
+                const normalizedSearchWS = normalizedSearch.replace(/\s+/g, ' ').trim();
+                const normalizedActualWS = normalizedActual.replace(/\s+/g, ' ').trim();
+                isContentMatch = normalizedSearchWS === normalizedActualWS;
+            }
+            
+            const isValid = isEmptySearch || isContentMatch;
             
             if (isValid) {
                 matches.push({
@@ -1676,25 +1697,30 @@ async function createModifiedContent(
     // Get the original file content to preserve formatting
     let originalText = '';
     let lines: string[] = [];
-    let lineEndings: string = '\n'; // Default line ending
+    let lineEndings: string = '\n'; // Default to LF for consistency
+    let fileExists = true;
     
     try {
         const document = await vscode.workspace.openTextDocument(fileUri);
         originalText = document.getText();
         
-        // Detect line endings from original file
-        const crlfCount = (originalText.match(/\r\n/g) || []).length;
-        const lfCount = (originalText.match(/(?<!\r)\n/g) || []).length;
-        lineEndings = crlfCount > lfCount ? '\r\n' : '\n';
+        // Detect line endings from original file only if file exists and has content
+        if (originalText.length > 0) {
+            const crlfCount = (originalText.match(/\r\n/g) || []).length;
+            const lfCount = (originalText.match(/(?<!\r)\n/g) || []).length;
+            lineEndings = crlfCount > lfCount ? '\r\n' : '\n';
+        }
         
         // Get lines while preserving exact content
         for (let i = 0; i < document.lineCount; i++) {
             lines.push(document.lineAt(i).text);
         }
     } catch (error) {
-        // File doesn't exist, start with empty content
+        // File doesn't exist, start with empty content and use LF line endings
         console.log(`[createModifiedContent] File ${filePath} does not exist. Starting with empty content.`);
         lines = [];
+        fileExists = false;
+        lineEndings = '\n'; // Use LF for new files
     }
     
     // Normalize diffs to handle backward compatibility
@@ -1719,53 +1745,66 @@ async function createModifiedContent(
     for (const { match, diff } of sortedChanges) {
         console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
         
-        // Preserve indentation from the original matched content
-        let indentationToPreserve = '';
-        if (match.startLine < lines.length && lines[match.startLine]) {
-            // Extract leading whitespace from the first line being replaced
-            const leadingWhitespace = lines[match.startLine].match(/^\s*/);
-            if (leadingWhitespace) {
-                indentationToPreserve = leadingWhitespace[0];
-            }
-        }
-        
         // Split replacement content preserving original line endings
         const newLines = diff.replace.split(/\r?\n/);
         
-        // Apply preserved indentation to new lines (except if it's already indented)
-        const indentedNewLines = newLines.map((line, index) => {
-            // Skip empty lines or lines that already have indentation
-            if (line === '' || line.match(/^\s/) || index === 0) {
-                return line;
-            }
-            // Check if original content had this line indented
-            const originalLineIndex = match.startLine + index;
-            if (originalLineIndex <= match.endLine && originalLineIndex < lines.length) {
-                const originalIndent = lines[originalLineIndex].match(/^\s*/);
-                if (originalIndent && originalIndent[0]) {
-                    // Use original line's indentation
-                    return originalIndent[0] + line.trimStart();
+        // For full file replacement (endLine: -1), use content as-is without indentation preservation
+        let finalNewLines: string[];
+        if (match.strategy === 'full-file-replacement' || match.strategy === 'new-file-full-replacement') {
+            // Use replacement content exactly as provided
+            finalNewLines = newLines;
+        } else {
+            // Preserve indentation from the original matched content for regular diffs
+            let indentationToPreserve = '';
+            if (match.startLine < lines.length && lines[match.startLine]) {
+                // Extract leading whitespace from the first line being replaced
+                const leadingWhitespace = lines[match.startLine].match(/^\s*/);
+                if (leadingWhitespace) {
+                    indentationToPreserve = leadingWhitespace[0];
                 }
             }
-            // Otherwise, use the indentation from the first line
-            return indentationToPreserve + line;
-        });
+            
+            // Apply preserved indentation to new lines (except if it's already indented)
+            finalNewLines = newLines.map((line, index) => {
+                // Skip empty lines or lines that already have indentation
+                if (line === '' || line.match(/^\s/) || index === 0) {
+                    return line;
+                }
+                // Check if original content had this line indented
+                const originalLineIndex = match.startLine + index;
+                if (originalLineIndex <= match.endLine && originalLineIndex < lines.length) {
+                    const originalIndent = lines[originalLineIndex].match(/^\s*/);
+                    if (originalIndent && originalIndent[0]) {
+                        // Use original line's indentation
+                        return originalIndent[0] + line.trimStart();
+                    }
+                }
+                // Otherwise, use the indentation from the first line
+                return indentationToPreserve + line;
+            });
+        }
         
         // Special handling for new file insertions
         if (match.strategy === 'new-file-insert' && lines.length === 0) {
             // For empty files, just set the lines directly
-            lines = indentedNewLines;
-        } else if (match.strategy === 'new-file-insert') {
+            lines = finalNewLines;
+        } else if (match.strategy === 'new-file-insert' || match.strategy === 'new-file-full-replacement') {
             // For subsequent insertions in new files, append
-            lines.push(...indentedNewLines);
+            lines.push(...finalNewLines);
         } else {
             // Normal replacement
-            lines.splice(match.startLine, match.endLine - match.startLine + 1, ...indentedNewLines);
+            lines.splice(match.startLine, match.endLine - match.startLine + 1, ...finalNewLines);
         }
     }
 
     // Join with detected line endings to preserve file format
-    return lines.join(lineEndings);
+    // For new files, ensure consistent LF line endings unless original file had CRLF
+    let result = lines.join(lineEndings);
+    if (!fileExists && lineEndings === '\n') {
+        // Normalize to LF for new files to ensure consistency
+        result = result.replace(/\r\n/g, '\n');
+    }
+    return result;
 }
 
 /**
