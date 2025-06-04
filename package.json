@@ -60,7 +60,11 @@
     "watch": "tsc -watch -p ./",
     "pretest": "npm run compile && npm run lint",
     "lint": "eslint src",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "build": "echo '🔨 Building package...' && npx vsce package && echo '✅ Package built successfully!'",
+    "install-extension": "echo '📦 Installing VSCode Extension...' && code --install-extension vscode-mcp-server-0.0.4.vsix --force && echo '✅ Extension installed successfully!'",
+    "reload-extensions": "echo '🔄 Reloading VSCode Extensions...' && code -r . && echo '✅ VSCode Extensions reloaded successfully!'",
+    "rebuild-and-reload": "echo '🔨 Building package...' && npx vsce package && echo '✅ Package built successfully!' && echo '📦 Installing VSCode Extension...' && code --install-extension vscode-mcp-server-0.0.4.vsix --force && echo '✅ Extension installed successfully!' && echo '🔄 Reloading VSCode Extensions...' && code -r . && echo '✅ VSCode Extensions reloaded successfully!'"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

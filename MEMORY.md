@@ -4,20 +4,27 @@
 This file tracks important learnings, patterns, and decisions made during the development of the vscode-mcp-server project, currently focusing on shell tools implementation.
 
 ## CRITICAL: Extension Testing Workflow
-**EXTREMELY IMPORTANT**: After making ANY code changes, and before running ANY tests, you MUST rebuild and reload the extension:
+**EXTREMELY IMPORTANT**: After making ANY code changes, and before running ANY tests, you MUST rebuild and reload the extension.
 
+### ✨ NEW: Single Rebuild-and-Reload Script (✅ TESTED & WORKING)
+
+**Complete rebuild workflow with step-by-step feedback:**
 ```bash
-npm run compile
-vsce package
-code --install-extension vscode-mcp-server-0.0.4.vsix --force
-code -r .
+npm run rebuild-and-reload
 ```
 
-This sequence:
-1. **npm run compile** - Compiles TypeScript to JavaScript
-2. **vsce package** - Creates the .vsix extension package
-3. **code --install-extension** - Installs the updated extension (--force overwrites existing)
-4. **code -r .** - Reloads VS Code in the current directory
+**Output format:**
+```
+🔨 Building package...
+<runs npx vsce package which calls npm run vscode:prepublish -> npm run compile>
+✅ Package built successfully!
+📦 Installing VSCode Extension...
+<runs code --install-extension vscode-mcp-server-0.0.4.vsix --force>
+✅ Extension installed successfully!
+🔄 Reloading VSCode Extensions...
+<runs code -r . to reload>
+✅ VSCode Extensions reloaded successfully!
+```
 
 **Why this is critical**: VS Code extensions run in a separate extension host process. Changes to the code are NOT reflected until the extension is recompiled, repackaged, and reinstalled. Running tests without this process will test the OLD code, not your changes!
 
