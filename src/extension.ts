@@ -20,6 +20,12 @@ let shellAutoApprovalEnabled: boolean = false;
 let shellAutoApprovalStatusBar: vscode.StatusBarItem | undefined;
 // Main menu button for consolidated UI
 let mainMenuButton: vscode.StatusBarItem | undefined;
+// Test tooltip buttons
+let testButton1: vscode.StatusBarItem | undefined;
+let testButton2: vscode.StatusBarItem | undefined;
+let testButton3: vscode.StatusBarItem | undefined;
+let testButton4: vscode.StatusBarItem | undefined;
+let testButton5: vscode.StatusBarItem | undefined;
 
 // Terminal name constant
 const TERMINAL_NAME = 'MCP Shell Commands';
@@ -551,6 +557,91 @@ export async function activate(context: vscode.ExtensionContext) {
         updateShellAutoApprovalStatusBar();
         context.subscriptions.push(shellAutoApprovalStatusBar);
         
+        // Test 1: Markdown command links in tooltip
+        testButton1 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            50
+        );
+        testButton1.text = '1';
+        const tooltip1 = new vscode.MarkdownString();
+        tooltip1.isTrusted = true; // Enable command URIs
+        tooltip1.supportThemeIcons = true; // Enable $(icon) syntax
+        tooltip1.value = `**Test 1: Command Links**\n\n` +
+            `[$(server) Toggle Server](command:vscode-mcp-server.toggleServer)\n\n` +
+            `[$(pass-filled) Toggle Diff Auto-Approve](command:vscode-mcp-server.toggleAutoApproval)\n\n` +
+            `[$(shield) Toggle Shell Auto-Approve](command:vscode-mcp-server.toggleShellAutoApproval)\n\n` +
+            `---\n\n` +
+            `[$(gear) Open Settings](command:workbench.action.openSettings?["vscode-mcp-server"])`;
+        testButton1.tooltip = tooltip1;
+        testButton1.show();
+        context.subscriptions.push(testButton1);
+        
+        // Test 2: HTML in markdown (if supported)
+        testButton2 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            49
+        );
+        testButton2.text = '2';
+        const tooltip2 = new vscode.MarkdownString();
+        tooltip2.isTrusted = true;
+        tooltip2.supportHtml = true; // Try to enable HTML
+        tooltip2.value = `**Test 2: HTML Content**\n\n` +
+            `<div style="padding: 5px; border: 1px solid #007ACC; border-radius: 4px;">\n` +
+            `  <label><input type="checkbox" checked> Auto-Approve Enabled</label><br>\n` +
+            `  <button onclick="vscode.commands.executeCommand('vscode-mcp-server.toggleServer')">Toggle Server</button>\n` +
+            `</div>\n\n` +
+            `<hr style="border-color: #007ACC;">\n\n` +
+            `<progress value="70" max="100">70%</progress>`;
+        testButton2.tooltip = tooltip2;
+        testButton2.show();
+        context.subscriptions.push(testButton2);
+        
+        // Test 3: Unicode box drawing and progress bars
+        testButton3 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            48
+        );
+        testButton3.text = '3';
+        const tooltip3 = new vscode.MarkdownString();
+        tooltip3.isTrusted = true;
+        tooltip3.value = `**Test 3: Unicode & Progress**\n\n` +
+            `╭─ VS Code MCP Server ─────────────╮\n` +
+            `│ ● Server: Running          │\n` +
+            `│ ⚠ Auto-Approve: Enabled    │\n` +
+            `╰────────────────────────────╯\n\n` +
+            `**Progress Bars:**\n\n` +
+            `Code completions: ████████░░ 80%\n\n` +
+            `Chat messages:    ██░░░░░░░░ 20%\n\n` +
+            `**Checkboxes:**\n\n` +
+            `☑ Code Completions (all files)\n\n` +
+            `☐ Code Completions (TypeScript)\n\n` +
+            `☑ Next Edit Suggestions`;
+        testButton3.tooltip = tooltip3;
+        testButton3.show();
+        context.subscriptions.push(testButton3);
+        
+        // Test 4: Markdown table with links
+        testButton4 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            47
+        );
+        testButton4.text = '4';
+        const tooltip4 = new vscode.MarkdownString();
+        tooltip4.isTrusted = true;
+        tooltip4.supportThemeIcons = true;
+        tooltip4.value = `**Test 4: Table Layout**\n\n` +
+            `| Feature | Status | Action |\n` +
+            `|:--------|:------:|:-------|\n` +
+            `| $(server) MCP Server | ✅ Running | [Toggle](command:vscode-mcp-server.toggleServer) |\n` +
+            `| $(pass-filled) Diff Auto | ❌ OFF | [Enable](command:vscode-mcp-server.toggleAutoApproval) |\n` +
+            `| $(shield) Shell Auto | ⚠️ ON | [Disable](command:vscode-mcp-server.toggleShellAutoApproval) |\n\n` +
+            `---\n\n` +
+            `| $(info) [Server Info](command:vscode-mcp-server.showServerInfo) | $(gear) [Settings](command:workbench.action.openSettings) |\n` +
+            `|:--|:--|`;
+        testButton4.tooltip = tooltip4;
+        testButton4.show();
+        context.subscriptions.push(testButton4);
+        
         // Only start the server if enabled
         if (serverEnabled) {
             // Create the shared terminal
@@ -693,6 +784,24 @@ export async function deactivate() {
     if (mainMenuButton) {
         mainMenuButton.dispose();
         mainMenuButton = undefined;
+    }
+    
+    // Dispose test buttons
+    if (testButton1) {
+        testButton1.dispose();
+        testButton1 = undefined;
+    }
+    if (testButton2) {
+        testButton2.dispose();
+        testButton2 = undefined;
+    }
+    if (testButton3) {
+        testButton3.dispose();
+        testButton3 = undefined;
+    }
+    if (testButton4) {
+        testButton4.dispose();
+        testButton4 = undefined;
     }
     
     if (statusBarItem) {
