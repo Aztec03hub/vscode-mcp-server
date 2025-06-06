@@ -270,7 +270,7 @@ const DESTRUCTIVE_PATTERNS = [/\brm\s+-rf\b/, ...];
 **What was implemented:**
 1. **State Management**: Added `shellAutoApprovalEnabled` boolean variable with persistence
 2. **Status Bar Item**: Created shell auto-approval status bar with:
-   - Icon: `$(shield)` 
+   - Icon: `$(shield)`
    - Priority: 98 (next to other status bars)
    - Red background when enabled (danger indicator)
    - Clear warning tooltips
@@ -376,7 +376,7 @@ This is a VS Code API limitation, not an implementation issue.
 
 **CRITICAL PHASE 1 COMPLETION**: All critical safety tasks are now complete!
 - ✅ Task 1.1: Safety detection (was already working)
-- ✅ Task 1.2: Shell Auto-Approval Toggle 
+- ✅ Task 1.2: Shell Auto-Approval Toggle
 - ✅ Task 1.3: Status Bar Approval Buttons
 - ✅ Task 1.4: Safety Testing Protocol
 
@@ -458,7 +458,7 @@ This is the best approach given VS Code's API constraints.
 ### What Was Implemented
 Despite VS Code API limitations, we implemented a consolidated menu using QuickPick:
 
-1. **Single Main Menu Button**: 
+1. **Single Main Menu Button**:
    - Text: `$(gear) MCP Server` or `$(server-process) MCP Server` when running
    - Shows warning icon when auto-approval is enabled
    - Comprehensive tooltip with all statuses
@@ -577,7 +577,7 @@ Despite VS Code API limitations, we implemented a consolidated menu using QuickP
 
 ## Detection System Debugging (2025-06-04)
 
-### Key Finding: detectDestructiveCommand IS Working!
+### Key Finding: detectDestructiveCommand IS Working
 - **Issue**: User reported `detectDestructiveCommand` wasn't being called
 - **Resolution**: Function is working correctly - it's being called and detecting commands
 - **Test Results**:
