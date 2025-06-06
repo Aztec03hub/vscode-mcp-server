@@ -518,6 +518,61 @@ Despite VS Code API limitations, we implemented a consolidated menu using QuickP
 **Files Modified:**
 - `src/tools/shell-tools.ts` - Updated `DESTRUCTIVE_PATTERNS` array with enhanced regex patterns
 
+## Tooltip Persistence Experiments (2025-06-06)
+
+### E.x Button Implementation for Tooltip Persistence
+**Goal**: Create tooltips that stay visible like GitHub Copilot's tooltips
+
+**Research Findings**:
+- VS Code has `editor.hover.sticky` setting for editor hovers
+- Can register hover providers using `vscode.languages.registerHoverProvider`
+- Sticky hover is designed for interactive content
+
+**Implemented Test Buttons**:
+
+#### E.1 - Event Propagation Manipulation
+- Uses `onmouseout="event.stopPropagation(); return false;"`
+- Attempts to prevent mouseout/mouseleave events
+- Includes interactive hover area within tooltip
+
+#### E.2 - Invisible Overlay Technique  
+- Creates invisible overlay with `position: absolute; inset: -50px`
+- Overlay extends beyond tooltip boundaries
+- Uses z-index layering to capture mouse events
+
+#### E.3 - Focus Management
+- Uses `tabindex="0"` for focusability
+- Attempts to prevent blur with `onblur="return false"`
+- Includes input fields and buttons for focus testing
+
+#### E.4 - CSS Pointer Events
+- Manipulates `pointer-events` CSS property
+- Switches between `none` and `all` states
+- Uses CSS classes and !important overrides
+
+#### E.5 - Command Execution on Hover
+- Tests various VS Code commands in tooltip
+- Includes command links to focus/hover commands
+- Interactive hover area with dynamic content
+
+#### E.6 - Hover Provider Approach (NEW)
+- Registers a hover provider (experimental)
+- Includes interactive elements (sliders, checkboxes)
+- Attempts to leverage `editor.hover.sticky` behavior
+- Note: Hover providers are designed for editor content, not status bar
+
+**Key Observations**:
+- Status bar tooltips use a different system than editor hovers
+- GitHub Copilot likely uses internal/privileged APIs
+- Multiple approaches implemented to maximize success chances
+- Interactive content may trigger different tooltip behavior
+
+**Next Steps**:
+- Test each button to see which approaches work
+- C.2's continuous update showed promise (highlighted entire status bar)
+- D.1's table clicks made tooltip highlight blue
+- Combine successful techniques from different approaches
+
 **Confidence Level Achieved: 10/10** - All tests passing, comprehensive validation complete
 
 ## Detection System Debugging (2025-06-04)

@@ -26,6 +26,30 @@ let testButton2: vscode.StatusBarItem | undefined;
 let testButton3: vscode.StatusBarItem | undefined;
 let testButton4: vscode.StatusBarItem | undefined;
 let testButton5: vscode.StatusBarItem | undefined;
+// Click-to-activate test buttons
+let testButtonA: vscode.StatusBarItem | undefined;
+let testButtonAActive: boolean = false;
+let testButtonB: vscode.StatusBarItem | undefined;
+let testButtonBActive: boolean = false;
+let testButtonC: vscode.StatusBarItem | undefined;
+let testButtonD1: vscode.StatusBarItem | undefined;
+let testButtonD2: vscode.StatusBarItem | undefined;
+let testButtonE: vscode.StatusBarItem | undefined;
+let testButtonF: vscode.StatusBarItem | undefined;
+// Fine-grained test buttons
+let testButtonA1: vscode.StatusBarItem | undefined;
+let testButtonA2: vscode.StatusBarItem | undefined;
+let testButtonB1: vscode.StatusBarItem | undefined;
+let testButtonB2: vscode.StatusBarItem | undefined;
+let testButtonC1: vscode.StatusBarItem | undefined;
+let testButtonC2: vscode.StatusBarItem | undefined;
+// New E.x test buttons for tooltip persistence
+let testButtonE1: vscode.StatusBarItem | undefined;
+let testButtonE2: vscode.StatusBarItem | undefined;
+let testButtonE3: vscode.StatusBarItem | undefined;
+let testButtonE4: vscode.StatusBarItem | undefined;
+let testButtonE5: vscode.StatusBarItem | undefined;
+let testButtonE6: vscode.StatusBarItem | undefined;
 
 // Terminal name constant
 const TERMINAL_NAME = 'MCP Shell Commands';
@@ -642,6 +666,1053 @@ export async function activate(context: vscode.ExtensionContext) {
         testButton4.show();
         context.subscriptions.push(testButton4);
         
+        // Test 5: Mixed content with code blocks and formatting
+        testButton5 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            46
+        );
+        testButton5.text = '5';
+        const tooltip5 = new vscode.MarkdownString();
+        tooltip5.isTrusted = true;
+        tooltip5.supportThemeIcons = true;
+        tooltip5.value = `**Test 5: Mixed Content**\n\n` +
+            `---\n\n` +
+            `\`\`\`json\n` +
+            `{\n` +
+            `  "server": "running",\n` +
+            `  "port": 3000,\n` +
+            `  "autoApprove": true\n` +
+            `}\n` +
+            `\`\`\`\n\n` +
+            `> **Note:** This is a blockquote with *italic* and **bold** text\n\n` +
+            `1. First item with $(check) icon\n` +
+            `2. Second item with $(warning) icon\n` +
+            `3. Third item with $(error) icon\n\n` +
+            `[Click here](command:vscode-mcp-server.showServerInfo) to show server info\n\n` +
+            `---\n\n` +
+            `_Hover behavior test: Does this update on hover?_`;
+        testButton5.tooltip = tooltip5;
+        testButton5.show();
+        context.subscriptions.push(testButton5);
+        
+        // Test A: Toggle tooltip content on click
+        testButtonA = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            45
+        );
+        testButtonA.text = 'A';
+        testButtonA.command = 'vscode-mcp-server.toggleTestA';
+        
+        // Register the toggle command
+        const toggleTestACommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleTestA',
+            () => {
+                testButtonAActive = !testButtonAActive;
+                updateTestButtonA();
+            }
+        );
+        context.subscriptions.push(toggleTestACommand);
+        
+        function updateTestButtonA() {
+            const tooltipA = new vscode.MarkdownString();
+            tooltipA.isTrusted = true;
+            tooltipA.supportThemeIcons = true;
+            tooltipA.supportHtml = true;
+            
+            if (testButtonAActive) {
+                tooltipA.value = `<div style="border: 2px solid #007ACC; padding: 8px; border-radius: 4px;">\n` +
+                    `<strong>🔵 ACTIVE MODE</strong><br><br>\n` +
+                    `The tooltip is now activated!<br>\n` +
+                    `Click button again to deactivate.<br><br>\n` +
+                    `<span style="color: #007ACC;">Border should be blue when active</span>\n` +
+                    `</div>`;
+                if (testButtonA) {
+                    testButtonA.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+                }
+            } else {
+                tooltipA.value = `<div style="border: 1px solid #666; padding: 8px; border-radius: 4px;">\n` +
+                    `<strong>⚪ HOVER MODE</strong><br><br>\n` +
+                    `Click the button to activate!<br>\n` +
+                    `Tooltip will change appearance.<br><br>\n` +
+                    `<span style="color: #666;">Border is gray in hover mode</span>\n` +
+                    `</div>`;
+                if (testButtonA) {
+                    testButtonA.backgroundColor = undefined;
+                }
+            }
+            
+            if (testButtonA) {
+                testButtonA.tooltip = tooltipA;
+            }
+        }
+        
+        updateTestButtonA();
+        testButtonA.show();
+        context.subscriptions.push(testButtonA);
+        
+        // Test B: Status bar item state changes
+        testButtonB = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            44
+        );
+        testButtonB.text = 'B';
+        testButtonB.command = 'vscode-mcp-server.toggleTestB';
+        
+        const toggleTestBCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleTestB',
+            () => {
+                testButtonBActive = !testButtonBActive;
+                updateTestButtonB();
+            }
+        );
+        context.subscriptions.push(toggleTestBCommand);
+        
+        function updateTestButtonB() {
+            const tooltipB = new vscode.MarkdownString();
+            tooltipB.isTrusted = true;
+            tooltipB.supportHtml = true;
+            
+            if (testButtonBActive) {
+                if (testButtonB) {
+                    testButtonB.text = 'B•'; // Add bullet to show active
+                    testButtonB.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
+                    testButtonB.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+                }
+                
+                tooltipB.value = `<div style="background-color: #007ACC22; padding: 10px;">\n` +
+                    `<h3>Status: ACTIVE ✓</h3>\n` +
+                    `Button appearance changed!<br>\n` +
+                    `- Text: B•<br>\n` +
+                    `- Background: Blue<br>\n` +
+                    `- Foreground: Prominent<br>\n` +
+                    `</div>`;
+            } else {
+                if (testButtonB) {
+                    testButtonB.text = 'B';
+                    testButtonB.color = undefined;
+                    testButtonB.backgroundColor = undefined;
+                }
+                
+                tooltipB.value = `<div style="background-color: #66666622; padding: 10px;">\n` +
+                    `<h3>Status: INACTIVE</h3>\n` +
+                    `Click to activate and change:<br>\n` +
+                    `- Button appearance<br>\n` +
+                    `- Tooltip style<br>\n` +
+                    `- Background color<br>\n` +
+                    `</div>`;
+            }
+            
+            if (testButtonB) {
+                testButtonB.tooltip = tooltipB;
+            }
+        }
+        
+        updateTestButtonB();
+        testButtonB.show();
+        context.subscriptions.push(testButtonB);
+        
+        // Test C: Dynamic tooltip with timestamp
+        testButtonC = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            43
+        );
+        testButtonC.text = 'C';
+        testButtonC.command = 'vscode-mcp-server.clickTestC';
+        
+        let lastClickTime: Date | null = null;
+        
+        const clickTestCCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestC',
+            () => {
+                lastClickTime = new Date();
+                updateTestButtonC();
+                // Try to keep tooltip open by re-showing the button
+                if (testButtonC) {
+                    testButtonC.hide();
+                    setTimeout(() => {
+                        if (testButtonC) {
+                            testButtonC.show();
+                        }
+                    }, 10);
+                }
+            }
+        );
+        context.subscriptions.push(clickTestCCommand);
+        
+        function updateTestButtonC() {
+            const tooltipC = new vscode.MarkdownString();
+            tooltipC.isTrusted = true;
+            tooltipC.supportHtml = true;
+            
+            const now = new Date();
+            const isRecent = lastClickTime && (now.getTime() - lastClickTime.getTime()) < 5000;
+            
+            tooltipC.value = `<div style="border: 2px solid ${isRecent ? '#00AA00' : '#999999'}; padding: 10px;">\n` +
+                `<strong>Dynamic Update Test</strong><br><br>\n` +
+                `Current time: ${now.toLocaleTimeString()}<br>\n` +
+                `Last clicked: ${lastClickTime ? lastClickTime.toLocaleTimeString() : 'Never'}<br><br>\n` +
+                `${isRecent ? '<span style="color: #00AA00;">✓ Recently clicked (green border)</span>' : '<span style="color: #999999;">Click to update timestamp</span>'}\n` +
+                `</div>`;
+            
+            if (testButtonC) {
+                testButtonC.tooltip = tooltipC;
+            }
+        }
+        
+        // Update every second to show dynamic behavior
+        setInterval(() => updateTestButtonC(), 1000);
+        
+        updateTestButtonC();
+        testButtonC.show();
+        context.subscriptions.push(testButtonC);
+        
+        // Test A.1: CSS classes with codicon and theme classes
+        testButtonA1 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            42
+        );
+        testButtonA1.text = 'A.1';
+        testButtonA1.command = 'vscode-mcp-server.clickTestA1';
+        
+        let a1Active = false;
+        const clickTestA1Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestA1',
+            () => {
+                a1Active = !a1Active;
+                updateTestButtonA1();
+            }
+        );
+        context.subscriptions.push(clickTestA1Command);
+        
+        function updateTestButtonA1() {
+            const tooltipA1 = new vscode.MarkdownString();
+            tooltipA1.isTrusted = true;
+            tooltipA1.supportThemeIcons = true;
+            tooltipA1.supportHtml = true;
+            
+            if (a1Active) {
+                tooltipA1.value = `<div class="codicon codicon-check">\n` +
+                    `<span class="codicon codicon-circle-filled"> ACTIVE</span>\n` +
+                    `</div>\n\n` +
+                    `<div class="monaco-editor">\n` +
+                    `<span class="mtk1">Using VS Code internal classes:</span><br>\n` +
+                    `<span class="mtk12">• codicon classes</span><br>\n` +
+                    `<span class="mtk14">• monaco-editor classes</span><br>\n` +
+                    `<span class="mtk16">• theme color classes</span>\n` +
+                    `</div>`;
+                if (testButtonA1) {
+                    testButtonA1.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+                }
+            } else {
+                tooltipA1.value = `<div class="codicon codicon-circle-outline">\n` +
+                    `<span class="codicon codicon-debug-pause"> INACTIVE</span>\n` +
+                    `</div>\n\n` +
+                    `<div class="markdown-body">\n` +
+                    `Click to test CSS classes<br>\n` +
+                    `Looking for blue borders\n` +
+                    `</div>`;
+                if (testButtonA1) {
+                    testButtonA1.backgroundColor = undefined;
+                }
+            }
+            
+            if (testButtonA1) {
+                testButtonA1.tooltip = tooltipA1;
+            }
+        }
+        
+        updateTestButtonA1();
+        testButtonA1.show();
+        context.subscriptions.push(testButtonA1);
+        
+        // Test A.2: Theme-aware CSS variables
+        testButtonA2 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            41
+        );
+        testButtonA2.text = 'A.2';
+        testButtonA2.command = 'vscode-mcp-server.clickTestA2';
+        
+        let a2Active = false;
+        const clickTestA2Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestA2',
+            () => {
+                a2Active = !a2Active;
+                updateTestButtonA2();
+            }
+        );
+        context.subscriptions.push(clickTestA2Command);
+        
+        function updateTestButtonA2() {
+            const tooltipA2 = new vscode.MarkdownString();
+            tooltipA2.isTrusted = true;
+            tooltipA2.supportThemeIcons = true;
+            tooltipA2.supportHtml = true;
+            
+            if (a2Active) {
+                tooltipA2.value = `<div style="border: 2px solid var(--vscode-focusBorder); padding: 8px; background: var(--vscode-editor-background);">\n` +
+                    `<strong style="color: var(--vscode-terminal-ansiBlue);">🔵 ACTIVE</strong><br><br>\n` +
+                    `Testing CSS variables:<br>\n` +
+                    `<span style="color: var(--vscode-terminal-ansiGreen);">✓ --vscode-focusBorder</span><br>\n` +
+                    `<span style="color: var(--vscode-terminal-ansiYellow);">✓ --vscode-editor-background</span><br>\n` +
+                    `<span style="color: var(--vscode-terminal-ansiCyan);">✓ --vscode-terminal colors</span>\n` +
+                    `</div>`;
+            } else {
+                tooltipA2.value = `<div style="border: 1px solid var(--vscode-input-border); padding: 8px;">\n` +
+                    `<strong>⚪ INACTIVE</strong><br><br>\n` +
+                    `Click to test CSS variables<br>\n` +
+                    `Should use theme colors\n` +
+                    `</div>`;
+            }
+            
+            if (testButtonA2) {
+                testButtonA2.tooltip = tooltipA2;
+                testButtonA2.backgroundColor = a2Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonA2();
+        testButtonA2.show();
+        context.subscriptions.push(testButtonA2);
+        
+        // Test B.1: Webview panel approach
+        testButtonB1 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            40
+        );
+        testButtonB1.text = 'B.1';
+        testButtonB1.command = 'vscode-mcp-server.openWebviewB1';
+        
+        let webviewPanelB1: vscode.WebviewPanel | undefined;
+        
+        const openWebviewB1Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.openWebviewB1',
+            () => {
+                if (webviewPanelB1) {
+                    webviewPanelB1.reveal();
+                    return;
+                }
+                
+                // Create webview panel
+                webviewPanelB1 = vscode.window.createWebviewPanel(
+                    'mcpMenuB1',
+                    'MCP Menu (B.1)',
+                    vscode.ViewColumn.Beside,
+                    {
+                        enableScripts: true,
+                        retainContextWhenHidden: true
+                    }
+                );
+                
+                webviewPanelB1.webview.html = getWebviewContentB1();
+                
+                // Handle disposal
+                webviewPanelB1.onDidDispose(() => {
+                    webviewPanelB1 = undefined;
+                });
+                
+                // Handle messages from webview
+                webviewPanelB1.webview.onDidReceiveMessage(
+                    message => {
+                        switch (message.command) {
+                            case 'toggleServer':
+                                vscode.commands.executeCommand('vscode-mcp-server.toggleServer');
+                                break;
+                            case 'close':
+                                webviewPanelB1?.dispose();
+                                break;
+                        }
+                    }
+                );
+            }
+        );
+        context.subscriptions.push(openWebviewB1Command);
+        
+        function getWebviewContentB1(): string {
+            return `<!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {
+                        padding: 0;
+                        margin: 0;
+                        background: var(--vscode-dropdown-background);
+                        color: var(--vscode-dropdown-foreground);
+                        font-family: var(--vscode-font-family);
+                        font-size: var(--vscode-font-size);
+                    }
+                    .menu {
+                        border: 1px solid var(--vscode-focusBorder);
+                        border-radius: 4px;
+                        padding: 4px;
+                        box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+                    }
+                    .menu-item {
+                        padding: 4px 8px;
+                        cursor: pointer;
+                        border-radius: 2px;
+                    }
+                    .menu-item:hover {
+                        background: var(--vscode-list-hoverBackground);
+                    }
+                    .close-btn {
+                        float: right;
+                        cursor: pointer;
+                        opacity: 0.6;
+                    }
+                    .close-btn:hover {
+                        opacity: 1;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="menu">
+                    <span class="close-btn" onclick="closeMenu()">×</span>
+                    <div class="menu-item" onclick="toggleServer()">
+                        🔄 Toggle Server
+                    </div>
+                    <div class="menu-item">
+                        ✅ Auto-Approve: ON
+                    </div>
+                    <div class="menu-item">
+                        🛡️ Shell Auto: OFF
+                    </div>
+                    <hr>
+                    <div class="menu-item">
+                        ℹ️ Server Info
+                    </div>
+                </div>
+                <script>
+                    const vscode = acquireVsCodeApi();
+                    function toggleServer() {
+                        vscode.postMessage({ command: 'toggleServer' });
+                    }
+                    function closeMenu() {
+                        vscode.postMessage({ command: 'close' });
+                    }
+                </script>
+            </body>
+            </html>`;
+        }
+        
+        testButtonB1.tooltip = 'Click to open webview menu panel';
+        testButtonB1.show();
+        context.subscriptions.push(testButtonB1);
+        
+        // Test C.1: Hover provider attempt
+        testButtonC1 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            39
+        );
+        if (testButtonC1) {
+            testButtonC1.text = 'C.1​'; // Zero-width space for hover target
+            testButtonC1.command = 'vscode-mcp-server.toggleTestC1';
+        }
+        
+        let c1Active = false;
+        const toggleTestC1Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleTestC1',
+            () => {
+                c1Active = !c1Active;
+                updateTestButtonC1();
+            }
+        );
+        context.subscriptions.push(toggleTestC1Command);
+        
+        function updateTestButtonC1() {
+            const tooltipC1 = new vscode.MarkdownString();
+            tooltipC1.isTrusted = true;
+            tooltipC1.supportThemeIcons = true;
+            tooltipC1.supportHtml = true;
+            
+            // Try to make tooltip "sticky" with interactive content
+            tooltipC1.value = `<div onmouseover="this.style.border='2px solid blue'" onmouseout="this.style.border='1px solid gray'" style="border: 1px solid gray; padding: 10px;">\n` +
+                `<strong>${c1Active ? '🔵 ACTIVE' : '⚪ INACTIVE'}</strong><br><br>\n` +
+                `Testing hover persistence:<br>\n` +
+                `<a href="command:vscode-mcp-server.toggleServer">Toggle Server</a><br>\n` +
+                `<a href="command:vscode-mcp-server.toggleAutoApproval">Toggle Auto-Approve</a><br>\n` +
+                `<br>\n` +
+                `<details>\n` +
+                `<summary>More Options...</summary>\n` +
+                `<a href="command:vscode-mcp-server.showServerInfo">Server Info</a><br>\n` +
+                `<a href="command:workbench.action.openSettings">Settings</a>\n` +
+                `</details>\n` +
+                `</div>\n\n` +
+                `<script>console.log('Script test');</script>`; // Test if scripts work
+            
+            if (testButtonC1) {
+                testButtonC1.tooltip = tooltipC1;
+                testButtonC1.backgroundColor = c1Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonC1();
+        if (testButtonC1) {
+            testButtonC1.show();
+            context.subscriptions.push(testButtonC1);
+        }
+        
+        // Test C.2: Try to trigger hover state programmatically
+        testButtonC2 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            38
+        );
+        testButtonC2.text = 'C.2';
+        testButtonC2.command = 'vscode-mcp-server.activateHoverC2';
+        
+        let c2HoverActive = false;
+        const activateHoverC2Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.activateHoverC2',
+            async () => {
+                c2HoverActive = !c2HoverActive;
+                
+                // Try various methods to keep tooltip active
+                if (c2HoverActive) {
+                    // Method 1: Rapid show/hide to trigger hover
+                    testButtonC2?.hide();
+                    await new Promise(resolve => setTimeout(resolve, 1));
+                    testButtonC2?.show();
+                    
+                    // Method 2: Focus the status bar area
+                    await vscode.commands.executeCommand('workbench.action.focusStatusBar');
+                    
+                    // Method 3: Update tooltip continuously
+                    const interval = setInterval(() => {
+                        if (!c2HoverActive || !testButtonC2) {
+                            clearInterval(interval);
+                            return;
+                        }
+                        updateTestButtonC2WithTimestamp();
+                    }, 100);
+                }
+                
+                updateTestButtonC2WithTimestamp();
+            }
+        );
+        context.subscriptions.push(activateHoverC2Command);
+        
+        function updateTestButtonC2WithTimestamp() {
+            const tooltipC2 = new vscode.MarkdownString();
+            tooltipC2.isTrusted = true;
+            tooltipC2.supportThemeIcons = true;
+            tooltipC2.supportHtml = true;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            
+            tooltipC2.value = `<div style="padding: 10px; border: 2px solid ${c2HoverActive ? '#007ACC' : '#666666'};">\n` +
+                `<h3>${c2HoverActive ? '🔵 HOVER ACTIVE' : '⚪ HOVER INACTIVE'}</h3>\n` +
+                `<p>Timestamp: ${timestamp}</p>\n` +
+                `<p>Trying to keep hover active via:</p>\n` +
+                `<ul>\n` +
+                `<li>Rapid show/hide</li>\n` +
+                `<li>Focus status bar</li>\n` +
+                `<li>Continuous updates</li>\n` +
+                `</ul>\n` +
+                `<p><a href="command:vscode-mcp-server.toggleServer">Test command link</a></p>\n` +
+                `</div>`;
+            
+            if (testButtonC2) {
+                testButtonC2.tooltip = tooltipC2;
+                testButtonC2.backgroundColor = c2HoverActive ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonC2WithTimestamp();
+        testButtonC2.show();
+        context.subscriptions.push(testButtonC2);
+        
+        // Test D.1: Multiple clickable areas to maintain focus
+        testButtonD1 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            37
+        );
+        testButtonD1.text = 'D.1';
+        testButtonD1.command = 'vscode-mcp-server.clickTestD1';
+        
+        let d1ClickCount = 0;
+        const clickTestD1Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestD1',
+            () => {
+                d1ClickCount++;
+                updateTestButtonD1();
+            }
+        );
+        context.subscriptions.push(clickTestD1Command);
+        
+        function updateTestButtonD1() {
+            const tooltipD1 = new vscode.MarkdownString();
+            tooltipD1.isTrusted = true;
+            tooltipD1.supportThemeIcons = true;
+            tooltipD1.supportHtml = true;
+            
+            // Create multiple nested clickable areas
+            tooltipD1.value = `<div style="border: 2px solid #007ACC; padding: 4px;">\n` +
+                `<div style="background: #007ACC22; padding: 8px; margin: 2px;">\n` +
+                `<strong>Click Count: ${d1ClickCount}</strong>\n` +
+                `</div>\n` +
+                `<div style="padding: 4px;">\n` +
+                `<table style="width: 100%;">\n` +
+                `<tr>\n` +
+                `<td style="padding: 4px; background: #00AA0022;">\n` +
+                `<a href="command:vscode-mcp-server.toggleServer">$(server) Server</a>\n` +
+                `</td>\n` +
+                `<td style="padding: 4px; background: #AA000022;">\n` +
+                `<a href="command:vscode-mcp-server.toggleAutoApproval">$(pass-filled) Auto</a>\n` +
+                `</td>\n` +
+                `</tr>\n` +
+                `<tr>\n` +
+                `<td style="padding: 4px; background: #AAAA0022;">\n` +
+                `<a href="command:vscode-mcp-server.toggleShellAutoApproval">$(shield) Shell</a>\n` +
+                `</td>\n` +
+                `<td style="padding: 4px; background: #AA00AA22;">\n` +
+                `<a href="command:vscode-mcp-server.showServerInfo">$(info) Info</a>\n` +
+                `</td>\n` +
+                `</tr>\n` +
+                `</table>\n` +
+                `</div>\n` +
+                `<div style="text-align: center; padding: 4px; background: #66666622;">\n` +
+                `<span style="font-size: 10px;">Multiple clickable areas for focus retention</span>\n` +
+                `</div>\n` +
+                `</div>`;
+            
+            if (testButtonD1) {
+                testButtonD1.tooltip = tooltipD1;
+            }
+        }
+        
+        updateTestButtonD1();
+        testButtonD1.show();
+        context.subscriptions.push(testButtonD1);
+        
+        // Test D.2: Data attributes and tabindex
+        testButtonD2 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            36
+        );
+        testButtonD2.text = 'D.2';
+        testButtonD2.command = 'vscode-mcp-server.clickTestD2';
+        
+        let d2Active = false;
+        const clickTestD2Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestD2',
+            () => {
+                d2Active = !d2Active;
+                updateTestButtonD2();
+            }
+        );
+        context.subscriptions.push(clickTestD2Command);
+        
+        function updateTestButtonD2() {
+            const tooltipD2 = new vscode.MarkdownString();
+            tooltipD2.isTrusted = true;
+            tooltipD2.supportThemeIcons = true;
+            tooltipD2.supportHtml = true;
+            
+            // Try data attributes and focus-related attributes
+            tooltipD2.value = `<div data-code="active" class="${d2Active ? 'active-tooltip' : 'inactive-tooltip'}" style="border: 2px solid ${d2Active ? '#007ACC' : '#666'}; padding: 10px;">\n` +
+                `<h3>${d2Active ? 'ACTIVE STATE' : 'INACTIVE STATE'}</h3>\n` +
+                `<div class="codicon codicon-server" data-href="command:vscode-mcp-server.toggleServer">\n` +
+                `<a href="command:vscode-mcp-server.toggleServer">Toggle Server</a>\n` +
+                `</div>\n` +
+                `<br>\n` +
+                `<div style="background: #007ACC22; padding: 8px;">\n` +
+                `<p>Testing data attributes:</p>\n` +
+                `<ul>\n` +
+                `<li>data-code="active"</li>\n` +
+                `<li>class with state</li>\n` +
+                `<li>nested command links</li>\n` +
+                `</ul>\n` +
+                `</div>\n` +
+                `<br>\n` +
+                `<div style="display: flex; gap: 4px;">\n` +
+                `<span style="flex: 1; background: #00AA0044; padding: 4px; text-align: center;">\n` +
+                `<a href="command:vscode-mcp-server.toggleAutoApproval">Auto</a>\n` +
+                `</span>\n` +
+                `<span style="flex: 1; background: #AA000044; padding: 4px; text-align: center;">\n` +
+                `<a href="command:vscode-mcp-server.toggleShellAutoApproval">Shell</a>\n` +
+                `</span>\n` +
+                `</div>\n` +
+                `</div>`;
+            
+            if (testButtonD2) {
+                testButtonD2.tooltip = tooltipD2;
+                testButtonD2.backgroundColor = d2Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonD2();
+        testButtonD2.show();
+        context.subscriptions.push(testButtonD2);
+        
+        // Test E.1: Event Propagation Manipulation
+        testButtonE1 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            35
+        );
+        testButtonE1.text = 'E.1';
+        testButtonE1.command = 'vscode-mcp-server.clickTestE1';
+        
+        let e1Active = false;
+        const clickTestE1Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestE1',
+            () => {
+                e1Active = !e1Active;
+                updateTestButtonE1();
+            }
+        );
+        context.subscriptions.push(clickTestE1Command);
+        
+        function updateTestButtonE1() {
+            const tooltipE1 = new vscode.MarkdownString();
+            tooltipE1.isTrusted = true;
+            tooltipE1.supportThemeIcons = true;
+            tooltipE1.supportHtml = true;
+            
+            tooltipE1.value = `<div onmouseout="event.stopPropagation(); return false;" ` +
+                `onmouseleave="event.preventDefault(); return false;" ` +
+                `onmousemove="event.stopPropagation();" ` +
+                `style="border: 2px solid ${e1Active ? '#00FF00' : '#666666'}; padding: 10px; cursor: default;">\n` +
+                `<h3>${e1Active ? '🟢 E.1 ACTIVE' : '⚪ E.1 INACTIVE'}</h3>\n` +
+                `<p><strong>Event Propagation Test</strong></p>\n` +
+                `<p>Preventing mouseout/mouseleave events:</p>\n` +
+                `<ul>\n` +
+                `<li>onmouseout="event.stopPropagation()"</li>\n` +
+                `<li>onmouseleave="event.preventDefault()"</li>\n` +
+                `<li>return false on both events</li>\n` +
+                `</ul>\n` +
+                `<p>Click to toggle active state</p>\n` +
+                `<div onmouseover="this.style.background='#007ACC22'" onmouseout="this.style.background='transparent'; event.stopPropagation(); return false;" style="padding: 8px; margin-top: 8px; border: 1px solid #007ACC;">\n` +
+                `Hover over this box - events should be trapped\n` +
+                `</div>\n` +
+                `</div>`;
+            
+            if (testButtonE1) {
+                testButtonE1.tooltip = tooltipE1;
+                testButtonE1.backgroundColor = e1Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonE1();
+        testButtonE1.show();
+        context.subscriptions.push(testButtonE1);
+        
+        // Test E.2: Invisible Overlay Technique
+        testButtonE2 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            34
+        );
+        testButtonE2.text = 'E.2';
+        testButtonE2.command = 'vscode-mcp-server.clickTestE2';
+        
+        let e2Active = false;
+        const clickTestE2Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestE2',
+            () => {
+                e2Active = !e2Active;
+                updateTestButtonE2();
+            }
+        );
+        context.subscriptions.push(clickTestE2Command);
+        
+        function updateTestButtonE2() {
+            const tooltipE2 = new vscode.MarkdownString();
+            tooltipE2.isTrusted = true;
+            tooltipE2.supportThemeIcons = true;
+            tooltipE2.supportHtml = true;
+            
+            tooltipE2.value = `<div style="position: relative; border: 2px solid ${e2Active ? '#00FF00' : '#666666'}; padding: 10px;">\n` +
+                `<div style="position: absolute; inset: -50px; z-index: 1000; background: transparent;"></div>\n` +
+                `<div style="position: relative; z-index: 1001;">\n` +
+                `<h3>${e2Active ? '🟢 E.2 ACTIVE' : '⚪ E.2 INACTIVE'}</h3>\n` +
+                `<p><strong>Invisible Overlay Test</strong></p>\n` +
+                `<p>Using an invisible overlay to capture mouse events:</p>\n` +
+                `<ul>\n` +
+                `<li>Absolute positioned div</li>\n` +
+                `<li>Extends 50px beyond tooltip</li>\n` +
+                `<li>z-index: 1000 for overlay</li>\n` +
+                `<li>Content at z-index: 1001</li>\n` +
+                `</ul>\n` +
+                `<p>The overlay should keep the tooltip active</p>\n` +
+                `<div style="background: #007ACC22; padding: 8px; margin-top: 8px;">\n` +
+                `Interactive area with overlay protection\n` +
+                `</div>\n` +
+                `</div>\n` +
+                `</div>`;
+            
+            if (testButtonE2) {
+                testButtonE2.tooltip = tooltipE2;
+                testButtonE2.backgroundColor = e2Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonE2();
+        testButtonE2.show();
+        context.subscriptions.push(testButtonE2);
+        
+        // Test E.3: Focus Management
+        testButtonE3 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            33
+        );
+        testButtonE3.text = 'E.3';
+        testButtonE3.command = 'vscode-mcp-server.clickTestE3';
+        
+        let e3Active = false;
+        const clickTestE3Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestE3',
+            () => {
+                e3Active = !e3Active;
+                updateTestButtonE3();
+            }
+        );
+        context.subscriptions.push(clickTestE3Command);
+        
+        function updateTestButtonE3() {
+            const tooltipE3 = new vscode.MarkdownString();
+            tooltipE3.isTrusted = true;
+            tooltipE3.supportThemeIcons = true;
+            tooltipE3.supportHtml = true;
+            
+            tooltipE3.value = `<div tabindex="0" onfocus="this.style.outline='none'" ` +
+                `onblur="return false" ` +
+                `style="border: 2px solid ${e3Active ? '#00FF00' : '#666666'}; padding: 10px;">\n` +
+                `<h3>${e3Active ? '🟢 E.3 ACTIVE' : '⚪ E.3 INACTIVE'}</h3>\n` +
+                `<p><strong>Focus Management Test</strong></p>\n` +
+                `<p>Using focus events and tabindex:</p>\n` +
+                `<ul>\n` +
+                `<li>tabindex="0" for focusability</li>\n` +
+                `<li>onfocus removes outline</li>\n` +
+                `<li>onblur="return false" to prevent blur</li>\n` +
+                `</ul>\n` +
+                `<input type="text" placeholder="Click to focus" style="padding: 4px; margin: 8px 0;" />\n` +
+                `<br>\n` +
+                `<button onclick="this.focus()" style="padding: 4px 8px;">Focus Button</button>\n` +
+                `<p style="margin-top: 8px;">Focus should keep tooltip active</p>\n` +
+                `</div>`;
+            
+            if (testButtonE3) {
+                testButtonE3.tooltip = tooltipE3;
+                testButtonE3.backgroundColor = e3Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonE3();
+        testButtonE3.show();
+        context.subscriptions.push(testButtonE3);
+        
+        // Test E.4: CSS Pointer Events
+        testButtonE4 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            32
+        );
+        testButtonE4.text = 'E.4';
+        testButtonE4.command = 'vscode-mcp-server.clickTestE4';
+        
+        let e4Active = false;
+        const clickTestE4Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestE4',
+            () => {
+                e4Active = !e4Active;
+                updateTestButtonE4();
+            }
+        );
+        context.subscriptions.push(clickTestE4Command);
+        
+        function updateTestButtonE4() {
+            const tooltipE4 = new vscode.MarkdownString();
+            tooltipE4.isTrusted = true;
+            tooltipE4.supportThemeIcons = true;
+            tooltipE4.supportHtml = true;
+            
+            tooltipE4.value = `<style>\n` +
+                `.tooltip-content:hover { pointer-events: all !important; }\n` +
+                `.tooltip-content { pointer-events: none; }\n` +
+                `.hover-trap { pointer-events: all !important; }\n` +
+                `.hover-trap:hover { background: #007ACC44 !important; }\n` +
+                `</style>\n` +
+                `<div class="tooltip-content" style="border: 2px solid ${e4Active ? '#00FF00' : '#666666'}; padding: 10px;">\n` +
+                `<h3>${e4Active ? '🟢 E.4 ACTIVE' : '⚪ E.4 INACTIVE'}</h3>\n` +
+                `<p><strong>CSS Pointer Events Test</strong></p>\n` +
+                `<p>Manipulating pointer-events CSS:</p>\n` +
+                `<ul>\n` +
+                `<li>Default: pointer-events: none</li>\n` +
+                `<li>On hover: pointer-events: all</li>\n` +
+                `<li>Using !important overrides</li>\n` +
+                `</ul>\n` +
+                `<div class="hover-trap" style="padding: 8px; margin-top: 8px; border: 1px solid #007ACC; pointer-events: all;">\n` +
+                `This area captures pointer events\n` +
+                `</div>\n` +
+                `<p style="margin-top: 8px; font-size: 11px;">Pointer events manipulation for persistence</p>\n` +
+                `</div>`;
+            
+            if (testButtonE4) {
+                testButtonE4.tooltip = tooltipE4;
+                testButtonE4.backgroundColor = e4Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonE4();
+        testButtonE4.show();
+        context.subscriptions.push(testButtonE4);
+        
+        // Test E.5: Command Execution on Hover
+        testButtonE5 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            31
+        );
+        testButtonE5.text = 'E.5';
+        testButtonE5.command = 'vscode-mcp-server.clickTestE5';
+        
+        let e5Active = false;
+        const clickTestE5Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestE5',
+            () => {
+                e5Active = !e5Active;
+                updateTestButtonE5();
+            }
+        );
+        context.subscriptions.push(clickTestE5Command);
+        
+        function updateTestButtonE5() {
+            const tooltipE5 = new vscode.MarkdownString();
+            tooltipE5.isTrusted = true;
+            tooltipE5.supportThemeIcons = true;
+            tooltipE5.supportHtml = true;
+            
+            // Note: onmouseover with vscode.commands.executeCommand won't work in tooltips
+            // But we'll try various command links and see if any affect tooltip behavior
+            tooltipE5.value = `<div style="border: 2px solid ${e5Active ? '#00FF00' : '#666666'}; padding: 10px;">\n` +
+                `<h3>${e5Active ? '🟢 E.5 ACTIVE' : '⚪ E.5 INACTIVE'}</h3>\n` +
+                `<p><strong>Command Execution Test</strong></p>\n` +
+                `<p>Testing various VS Code commands:</p>\n` +
+                `<div style="background: #007ACC22; padding: 8px; margin: 8px 0;">\n` +
+                `<a href="command:workbench.action.focusStatusBar">Focus Status Bar</a><br>\n` +
+                `<a href="command:editor.action.showHover">Show Hover</a><br>\n` +
+                `<a href="command:workbench.action.keepEditor">Keep Editor</a><br>\n` +
+                `<a href="command:workbench.action.showCommands">Show Commands</a>\n` +
+                `</div>\n` +
+                `<p>Testing if any commands affect tooltip persistence</p>\n` +
+                `<div onmouseover="this.innerHTML='Hovered!'" onmouseout="this.innerHTML='Hover me'" style="padding: 8px; margin-top: 8px; border: 1px solid #007ACC; text-align: center;">\n` +
+                `Hover me\n` +
+                `</div>\n` +
+                `</div>`;
+            
+            if (testButtonE5) {
+                testButtonE5.tooltip = tooltipE5;
+                testButtonE5.backgroundColor = e5Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonE5();
+        testButtonE5.show();
+        context.subscriptions.push(testButtonE5);
+        
+        // Test E.6: Hover Provider Approach (NEW)
+        testButtonE6 = vscode.window.createStatusBarItem(
+            vscode.StatusBarAlignment.Right,
+            30
+        );
+        testButtonE6.text = 'E.6';
+        testButtonE6.command = 'vscode-mcp-server.clickTestE6';
+        
+        let e6Active = false;
+        const clickTestE6Command = vscode.commands.registerCommand(
+            'vscode-mcp-server.clickTestE6',
+            () => {
+                e6Active = !e6Active;
+                updateTestButtonE6();
+                
+                // Try to trigger editor.hover.sticky behavior
+                if (e6Active) {
+                    // Attempt to show hover programmatically
+                    vscode.commands.executeCommand('editor.action.showHover');
+                }
+            }
+        );
+        context.subscriptions.push(clickTestE6Command);
+        
+        function updateTestButtonE6() {
+            const tooltipE6 = new vscode.MarkdownString();
+            tooltipE6.isTrusted = true;
+            tooltipE6.supportThemeIcons = true;
+            tooltipE6.supportHtml = true;
+            
+            tooltipE6.value = `<div style="border: 2px solid ${e6Active ? '#00FF00' : '#666666'}; padding: 10px;">\n` +
+                `<h3>${e6Active ? '🟢 E.6 ACTIVE' : '⚪ E.6 INACTIVE'}</h3>\n` +
+                `<p><strong>Hover Provider Test</strong></p>\n` +
+                `<p>Leveraging VS Code's hover system:</p>\n` +
+                `<ul>\n` +
+                `<li>Uses editor.hover.sticky setting</li>\n` +
+                `<li>Registered hover provider below</li>\n` +
+                `<li>Interactive content for stickiness</li>\n` +
+                `</ul>\n` +
+                `<div style="background: #007ACC22; padding: 8px; margin: 8px 0;">\n` +
+                `<p><strong>Interactive Elements:</strong></p>\n` +
+                `<input type="range" min="0" max="100" value="50" style="width: 100%;">\n` +
+                `<br><br>\n` +
+                `<label><input type="checkbox"> Enable sticky mode</label>\n` +
+                `<br>\n` +
+                `<label><input type="radio" name="opt"> Option 1</label>\n` +
+                `<label><input type="radio" name="opt"> Option 2</label>\n` +
+                `</div>\n` +
+                `<p style="font-size: 11px;">Note: editor.hover.sticky must be enabled</p>\n` +
+                `</div>`;
+            
+            if (testButtonE6) {
+                testButtonE6.tooltip = tooltipE6;
+                testButtonE6.backgroundColor = e6Active ? 
+                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
+                    undefined;
+            }
+        }
+        
+        updateTestButtonE6();
+        testButtonE6.show();
+        context.subscriptions.push(testButtonE6);
+        
+        // Register a hover provider for the status bar area (experimental)
+        // Note: This likely won't work for status bar items, but worth trying
+        const hoverProvider = vscode.languages.registerHoverProvider(
+            { scheme: '*', pattern: '**/*' }, // Try to match everything
+            {
+                provideHover(document, position, token) {
+                    // This is a long shot - hover providers are meant for editor content
+                    // But let's see if it affects anything
+                    const hoverContent = new vscode.MarkdownString();
+                    hoverContent.isTrusted = true;
+                    hoverContent.supportThemeIcons = true;
+                    hoverContent.supportHtml = true;
+                    
+                    hoverContent.value = `**MCP Server Hover Provider**\n\n` +
+                        `This hover is provided by a registered hover provider.\n\n` +
+                        `If you see this in the status bar area, it means the hover provider is working!\n\n` +
+                        `[Toggle Server](command:vscode-mcp-server.toggleServer)\n\n` +
+                        `[Show Info](command:vscode-mcp-server.showServerInfo)`;
+                    
+                    return new vscode.Hover(hoverContent);
+                }
+            }
+        );
+        context.subscriptions.push(hoverProvider);
+        
         // Only start the server if enabled
         if (serverEnabled) {
             // Create the shared terminal
@@ -802,6 +1873,74 @@ export async function deactivate() {
     if (testButton4) {
         testButton4.dispose();
         testButton4 = undefined;
+    }
+    if (testButton5) {
+        testButton5.dispose();
+        testButton5 = undefined;
+    }
+    if (testButtonA) {
+        testButtonA.dispose();
+        testButtonA = undefined;
+    }
+    if (testButtonB) {
+        testButtonB.dispose();
+        testButtonB = undefined;
+    }
+    if (testButtonC) {
+        testButtonC.dispose();
+        testButtonC = undefined;
+    }
+    if (testButtonA1) {
+        testButtonA1.dispose();
+        testButtonA1 = undefined;
+    }
+    if (testButtonA2) {
+        testButtonA2.dispose();
+        testButtonA2 = undefined;
+    }
+    if (testButtonB1) {
+        testButtonB1.dispose();
+        testButtonB1 = undefined;
+    }
+    if (testButtonC1) {
+        testButtonC1.dispose();
+        testButtonC1 = undefined;
+    }
+    if (testButtonC2) {
+        testButtonC2.dispose();
+        testButtonC2 = undefined;
+    }
+    if (testButtonD1) {
+        testButtonD1.dispose();
+        testButtonD1 = undefined;
+    }
+    if (testButtonD2) {
+        testButtonD2.dispose();
+        testButtonD2 = undefined;
+    }
+    if (testButtonE1) {
+        testButtonE1.dispose();
+        testButtonE1 = undefined;
+    }
+    if (testButtonE2) {
+        testButtonE2.dispose();
+        testButtonE2 = undefined;
+    }
+    if (testButtonE3) {
+        testButtonE3.dispose();
+        testButtonE3 = undefined;
+    }
+    if (testButtonE4) {
+        testButtonE4.dispose();
+        testButtonE4 = undefined;
+    }
+    if (testButtonE5) {
+        testButtonE5.dispose();
+        testButtonE5 = undefined;
+    }
+    if (testButtonE6) {
+        testButtonE6.dispose();
+        testButtonE6 = undefined;
     }
     
     if (statusBarItem) {
