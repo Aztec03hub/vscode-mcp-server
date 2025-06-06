@@ -39,9 +39,9 @@
   - **Status**: ⬜ Not Started
 
 #### Task 1.2: Shell Auto-Approval Toggle
-  - **File**: `src/extension.ts`
-  - **Status**: ✅ COMPLETED
-  - **Implementation Steps**:
+- **File**: `src/extension.ts`
+- **Status**: ✅ COMPLETED
+- **Implementation Steps**:
   1. Add `shellAutoApprovalEnabled` variable (default: false)
   2. Create shell auto-approval status bar item:
      ```typescript
@@ -113,7 +113,7 @@
 - ✅ Single consolidated status bar item
 - ✅ Shows all options in one place
 - ✅ Rich descriptions and details for each option
-    - ❌ Appears at top center, not inline like GitHub Copilot
+  - ❌ Appears at top center, not inline like GitHub Copilot
 - ✅ Best available option within VS Code API constraints
 
     **Implementation Details**:
@@ -333,33 +333,33 @@ import {
     3. **Task 1.4** (Testing) - Requires 1.2 and 1.3 to be complete
     4. **Phase 2-5** - Can proceed after Phase 1 is complete
 
-    ### **Code Integration Points**
+   ### **Code Integration Points**
 
-    #### **Extension.ts Exports Required**:
-        ```typescript
-        // For shell-tools.ts to import
-        export function isShellAutoApprovalEnabled(): boolean
-        export async function requestShellCommandApproval(command: string, warning: string): Promise<boolean>
-        ```
+   #### **Extension.ts Exports Required**
+    ```typescript
+    // For shell-tools.ts to import
+    export function isShellAutoApprovalEnabled(): boolean
+    export async function requestShellCommandApproval(command: string, warning: string): Promise<boolean>
+    ```
 
-            #### **Shell-tools.ts Integration**:
-        ```typescript
-        import { isShellAutoApprovalEnabled, requestShellCommandApproval } from '../extension';
+   #### **Shell-tools.ts Integration**
+    ```typescript
+    import { isShellAutoApprovalEnabled, requestShellCommandApproval } from '../extension';
 
-        // In execute_shell_command_code tool:
-            if (safetyWarning) {
-    const autoApprovalEnabled = isShellAutoApprovalEnabled();
-    
-    if (!autoApprovalEnabled) {
-        const approved = await requestShellCommandApproval(command, safetyWarning);
-        if (!approved) {
-            registry.updateShellStatus(managedShell.id, 'idle');
-            return createErrorResult("Command cancelled by user due to safety concerns");
-        }
+    // In execute_shell_command_code tool:
+        if (safetyWarning) {
+const autoApprovalEnabled = isShellAutoApprovalEnabled();
+
+if (!autoApprovalEnabled) {
+    const approved = await requestShellCommandApproval(command, safetyWarning);
+    if (!approved) {
+        registry.updateShellStatus(managedShell.id, 'idle');
+        return createErrorResult("Command cancelled by user due to safety concerns");
     }
-    // If auto-approved or user approved, continue with execution
-        }
-        ```
+}
+// If auto-approved or user approved, continue with execution
+    }
+    ```
 
 ---
 
