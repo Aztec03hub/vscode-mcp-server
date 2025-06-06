@@ -1,492 +1,121 @@
-# Claude Implementation Plan: apply_diff Tool
+# CLAUDE.md
 
-## Project Overview
-Implementation of an enhanced `apply_diff` tool for the vscode-mcp-server project, inspired by Block's `create_diff` functionality but with enhanced support for multiple diff sections in a single file.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Reference Analysis
-Based on analysis of Block's vscode-mcp repository at `remote_reference/vscode-mcp`, we identified the following key components:
-- Server-side MCP tool that creates temporary files and manages diff workflow
-- VS Code extension integration via socket communication
-- User approval workflow with status bar buttons
-- Atomic file operations with proper cleanup
+## System Message
 
-## Enhanced Features Plan
+You are working on an existing vscode workspace, `vscode-mcp-server`, it's a vscode project which you can access using your mcp tools. These code tools interact with the VS Code workspace. Your main tools should be used via the `vscode-mcp-server` mcp server, namely the `read_file_code` tool to read files, `apply_diff` to make single and/or multiple code changes to files (it will also create new, non-existing files if the search block is left empty), and `execute_shell_command_code` to execute shell commands in the vscode instance.
 
-### Core Enhancement: Multiple Diff Support
-Unlike Block's implementation which handles single file changes, our `apply_diff` tool will support:
-- **Multiple diff sections** in a single file operation
-- **Unified diff view** showing all proposed changes at once
-- **Single accept/reject decision** for all changes
-- **Intelligent conflict detection** between diff sections
-- **Clear visual separation** between different change sections
+Before running code tools that will make any modification to code, always present a comprehensive and detailed plan to the user, including your confidence level (out of 10). When planning, use your tools to explore the codebase so that you understand the context of the project. If you are not confident in your plan because you require more information, use your tools, such as web search, to look for this information or ask the user.
 
-## Implementation Phases
+IMPORTANT: Only run code tools that will modify code after presenting such a plan to the user, and receiving explicit approval. Approval must be given each time; prior approval for a change does not imply that subsequent changes are approved. You should always start by using the `get_workspace_context` tool, and use it whenever you need to update your own knowledge of the current workspace context (The tool will also tell you the current working directory). Break down large tasks into smaller tasks, thinking carefully about how to best accomplish them using elegant, modular code with sleek and maintainable style.
+Always think carefully about how to proceed, especially if a tool fails. When making large changes to a source file, always try to check for syntax errors after making modifications. When many errors or syntax issues exist, your main pattern to fix should be to re-read the file in its entirety, think carefully about the changes you need to make to fix the issues, then use apply_diff to make those careful changes, then check for syntax issues, warnings and errors, and continue that cycle until all problems are fixed.
 
-### Phase 1: Core `apply_diff` Implementation ✅ **COMPLETED**
+MUST-FOLLOW RULES:
+(NON-NEGOTIABLE)
+* ALWAYS read any source file in full the first time, using the`read_file_code` tool. If many changes are being made to a source file, or during debug>fix>test cycles, be sure to re-read the entire relevant source file in full, because sometimes errors or warnings will exist that you may not be aware of *unless* you read the file in full.
+* ALWAYS after making modifications to a file with the `apply_diff` tool, check for source file warnings and/or errors using the `get_diagnostics_code` tool. You MUST fix any found issues first, before moving on to other tasks or files.
+* ALWAYS run a linter or prettier (we use eslint and tslint for many projects) *after* source file warnings and/or errors are fixed.
+* ALWAYS maintain a `MEMORY.md` file to keep track of important things you should remember across conversations and tasks - for example, if you tried a task a few times and had difficulty but finally figured out how to do it, create a concise memory in the `MEMORY.md` file about it. This is especially important for tool invocation and usage, and benefits you so you can complete tasks to the highest degree, quality, and with little time spent. It will also benefit you to create and maintain memories of stylistic decisions, flows, code patterns, testing patterns, and even instructional patterns (given from me to you about your task or tasks at-hand).
+* ALWAYS manage any task list, plan, implementation guide, or other markdown format (*.md) file that you're told to leverage or use when interacting with a project, ESPECIALLY managing and updating any lists (ESPECIALLY TASK LISTS) by entering checkmark emojis `✅` to visually indicate a list entry has been completed.
 
-#### Data Structures
+## Common Development Commands
+
+### Build & Test
+```bash
+npm run compile        # Compile TypeScript to JavaScript
+npm run watch          # Auto-compile on changes
+npm test               # Run all tests (includes lint)
+npm run lint           # Run ESLint checks
+npm run build          # Build .vsix extension package
+```
+
+### Quick Development Cycle
+```bash
+npm run rebuild-and-reload  # Build, install, and reload extension in one command
+```
+
+### Running Specific Tests
+```bash
+npm test -- --grep "TestName"     # Run specific test by name
+npm run test:shell                # Run shell-specific tests
+```
+
+## Architecture Overview
+
+This is a VS Code extension that implements an MCP (Model Context Protocol) server, exposing VS Code functionality to AI assistants.
+
+### Key Components
+
+1. **Extension Layer** (`src/extension.ts`)
+   * Manages VS Code lifecycle and UI elements (status bar)
+   * Handles server start/stop and auto-approval modes
+   * Bridges VS Code commands with MCP server
+
+2. **MCP Server** (`src/server.ts`)
+   * Express.js-based HTTP server implementing MCP protocol
+   * Registers and exposes tools to MCP clients
+   * Manages client connections via StreamableHTTPServerTransport
+
+3. **Tool Implementations** (`src/tools/`)
+   * `file-tools.ts`: File operations (list_directory, read_file)
+   * `edit-tools.ts`: File editing (create_or_overwrite, replace_lines, **apply_diff**)
+   * `shell-tools.ts`: Execute shell commands with safety features
+   * `diagnostics-tools.ts`: Get code errors/warnings
+   * `symbol-tools.ts`: Search symbols and find definitions
+
+### Special Focus: apply_diff Tool
+
+The `apply_diff` tool is a major enhancement featuring:
+* **Multiple diff sections** support in a single file
+* **Fuzzy content matching** with multiple strategies (exact, normalized, contextual, similarity)
+* **VS Code diff viewer** integration with status bar approval buttons
+* **Atomic operations** - all changes applied or none
+* Located in `src/tools/edit-tools.ts` starting around line 800+
+
+## Testing Requirements
+
+Before running tests, you must rebuild the extension after code changes:
+```bash
+npm run compile
+npm run build
+npm run install-extension
+npm test
+```
+
+The test suite includes:
+* Unit tests for individual components
+* Integration tests for end-to-end workflows
+* Specific apply_diff functionality tests with fuzzy matching scenarios
+* Shell tool safety and output limiting tests
+
+## apply_diff Tool Details
+
+### Current Implementation Status
+* ✅ Phase 1: Core functionality with fuzzy matching
+* ✅ Phase 2: Enhanced UX with status bar buttons
+* 🔲 Phase 3: Advanced features (partial application, conflict resolution)
+
+### Key Features
+1. **Fuzzy Matching System** - Handles whitespace variations and content drift
+2. **Multiple Diff Support** - Apply multiple changes atomically
+3. **Status Bar UI** - Clean approval interface (Apply/Reject/Info buttons)
+4. **Comprehensive Validation** - Overlap detection, conflict resolution
+
+### Data Structures
 ```typescript
 interface DiffSection {
-  startLine: number;     // 0-based line number
-  endLine: number;       // 0-based line number (inclusive)
+  startLine: number;     // 0-based
+  endLine: number;       // 0-based, inclusive
   originalContent: string;
   newContent: string;
-  description?: string;  // Optional description for this section
-}
-
-interface ApplyDiffArgs {
-  filePath: string;
-  diffs: DiffSection[];  // Array of diff sections
-  description?: string;  // Overall description
+  description?: string;
 }
 ```
 
-#### Implementation Strategy
-1. **Validation Phase**:
-   - Ensure file exists (only works on existing files)
-   - Validate all diff sections don't overlap
-   - Sort diff sections by line number
-   - **Fuzzy content matching** with intelligent error handling
+## Development Workflow Best Practices
 
-2. **Fuzzy Matching & Issue Handling** ⭐:
-   - **Whitespace normalization** for content comparison
-   - **Smart search algorithms** for approximate content matching
-   - **Line number adjustment** when exact matches aren't found
-   - **Contextual search** using surrounding lines
-   - **Multiple matching strategies** with fallback options
-
-3. **Diff Generation**:
-   - Apply all diffs to create a complete modified version
-   - Generate unified diff showing all changes
-   - Create temporary file with all changes applied
-
-4. **User Approval**:
-   - Show unified diff in VS Code's diff viewer
-   - Use status bar buttons or quick pick for accept/reject
-   - Apply all changes atomically if accepted
-
-5. **Conflict Detection**:
-   - Check for overlapping line ranges
-   - Detect if changes would interfere with each other
-   - Provide clear error messages for conflicts
-
-#### Files to Modify
-- `src/tools/edit-tools.ts` - Add the new `apply_diff` tool
-- `src/server.ts` - Register the new tool
-
-### Phase 2: Enhanced User Experience & Diff View Fixes 🎯 **CURRENT PHASE**
-
-#### Critical Bug Fixes
-
-##### 1. Diff View Persistence Issue
-- **Problem**: Diff view remains open after applying changes
-- **Root Cause**: Temporary file operations leave VS Code tabs open
-- **Solution**: Properly close diff view after approval/rejection
-
-##### 2. File Creation vs. Modification Flow
-- **New File Scenario**:
-  - Target file doesn't exist (e.g., `test.ts`)
-  - Show diff between empty file and full new content
-  - Create file only after user approval
-- **Existing File Scenario**:
-  - Show current file content vs. proposed changes
-  - Apply changes to existing file after approval
-- **Tab Naming**: Use descriptive pattern like `test.ts: Original ↔ LLM Changes (Editable) (test.ts ↔ C:\path_to_file) • X problems in this file • Untracked`
-
-#### Enhanced User Approval Interface Options
-
-##### Option 1: Status Bar Buttons ⭐ **RECOMMENDED**
-**Implementation**:
-```typescript
-// Create status bar items with better UX
-const approveButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1000);
-approveButton.text = '$(check) Apply Changes';
-approveButton.tooltip = 'Apply all proposed changes to the file';
-approveButton.command = 'mcp.apply-diff.approve';
-approveButton.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-approveButton.show();
-
-const rejectButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 999);
-rejectButton.text = '$(x) Reject Changes';
-rejectButton.tooltip = 'Reject changes and keep original file';
-rejectButton.command = 'mcp.apply-diff.reject';
-rejectButton.show();
-
-// Add file info button
-const infoButton = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 998);
-infoButton.text = `$(info) ${path.basename(filePath)} (${diffs.length} changes)`;
-infoButton.tooltip = `Reviewing ${diffs.length} changes in ${filePath}`;
-infoButton.show();
-```
-
-**Benefits**:
-- ✅ Always visible, doesn't obstruct diff view
-- ✅ One-click approval/rejection
-- ✅ Clean, minimal interface that doesn't get in the way
-- ✅ Follows VS Code design patterns
-- ✅ Keyboard accessible (can assign shortcuts)
-- ✅ Shows context info (file name, change count)
-
-##### Option 2: Elegant Floating Mini-Toolbar
-**Implementation**: Small, sleek toolbar that floats near the diff view
-```typescript
-// Create a minimal webview overlay
-const floatingToolbar = vscode.window.createWebviewPanel(
-    'diff-approval-toolbar',
-    'Diff Actions',
-    { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
-    {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: []
-    }
-);
-
-// Inject elegant CSS and minimal HTML
-floatingToolbar.webview.html = `
-<style>
-  body { 
-    margin: 0; padding: 8px; 
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--vscode-panel-border);
-    border-radius: 6px;
-    display: flex; gap: 8px; align-items: center;
-    font-family: var(--vscode-font-family);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  }
-  .btn { 
-    padding: 6px 12px; border: none; border-radius: 4px; 
-    font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 4px;
-  }
-  .approve { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
-  .reject { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
-  .info { color: var(--vscode-foreground); font-size: 12px; }
-</style>
-<div class="info">${path.basename(filePath)} • ${diffs.length} changes</div>
-<button class="btn approve" onclick="approve()">✓ Apply</button>
-<button class="btn reject" onclick="reject()">✗ Reject</button>
-`;
-```
-
-**Benefits**:
-- ✅ Sleek, modern appearance
-- ✅ Contextual positioning
-- ✅ Customizable styling to match VS Code themes
-- ✅ Shows additional context info
-- ✅ Floating design doesn't interfere with editor
-
-##### Option 3: Smart Command Palette Integration
-**Implementation**: Temporary commands with intelligent shortcuts
-```typescript
-// Register context-sensitive commands
-const approveCommand = vscode.commands.registerCommand('mcp.apply-diff.approve-current', async () => {
-    await applyCurrentDiff();
-});
-
-const rejectCommand = vscode.commands.registerCommand('mcp.apply-diff.reject-current', async () => {
-    await rejectCurrentDiff();
-});
-
-// Show elegant notification with shortcuts
-vscode.window.showInformationMessage(
-    `📝 Diff ready: ${diffs.length} changes in ${path.basename(filePath)}`,
-    { modal: false },
-    '✓ Apply (Ctrl+Shift+A)',
-    '✗ Reject (Ctrl+Shift+R)'
-);
-
-// Register keybindings dynamically
-vscode.commands.executeCommand('setContext', 'mcp.diffPending', true);
-```
-
-**Benefits**:
-- ✅ Leverages existing VS Code UX patterns
-- ✅ Keyboard-first workflow
-- ✅ Discoverable via command palette
-- ✅ Custom keybindings
-- ✅ Context-aware activation
-
-##### Option 4: Minimalist Notification Toast
-**Implementation**: Subtle, non-intrusive notification
-```typescript
-// Custom notification with timeout and actions
-const notification = vscode.window.withProgress({
-    location: vscode.ProgressLocation.Notification,
-    title: `Apply ${diffs.length} changes to ${path.basename(filePath)}?`,
-    cancellable: true
-}, async (progress, token) => {
-    return new Promise((resolve) => {
-        const actions = [
-            { title: '✓ Apply', action: 'apply' },
-            { title: '✗ Reject', action: 'reject' }
-        ];
-        
-        // Show with timeout
-        setTimeout(() => {
-            vscode.window.showInformationMessage(
-                `Review changes and decide...`,
-                ...actions.map(a => a.title)
-            ).then(resolve);
-        }, 1000);
-    });
-});
-```
-
-**Benefits**:
-- ✅ Subtle, non-intrusive
-- ✅ Auto-dismisses after timeout
-- ✅ Native VS Code notification system
-- ✅ Progress indication
-- ✅ Themeable
-
-##### Option 5: Context-Aware Editor Decorations
-**Implementation**: Inline decorations within the diff view
-```typescript
-// Add decorations to the diff editor
-const decorationType = vscode.window.createTextEditorDecorationType({
-    after: {
-        contentText: '    [✓ Apply All] [✗ Reject All]',
-        color: new vscode.ThemeColor('textLink.foreground'),
-        backgroundColor: new vscode.ThemeColor('editor.background'),
-        border: '1px solid var(--vscode-panel-border)',
-        borderRadius: '3px',
-        margin: '0 0 0 10px'
-    },
-    rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
-});
-
-// Apply to first line of diff
-const range = new vscode.Range(0, 0, 0, 0);
-editor.setDecorations(decorationType, [range]);
-```
-
-**Benefits**:
-- ✅ Contextual to actual changes
-- ✅ Minimal visual footprint
-- ✅ Direct association with content
-- ✅ Hover-based interaction
-
-#### Implementation Recommendation
-
-**Primary Choice**: **Status Bar Buttons (Option 1)** - Most elegant and unobtrusive
-- Provides persistent, visible controls
-- Doesn't interfere with diff view
-- Clean, professional appearance
-- Easy to implement and maintain
-
-**Secondary Choice**: **Floating Mini-Toolbar (Option 2)** - For premium UX
-- Modern, app-like interface
-- Contextual and stylish
-- More implementation complexity but better visual appeal
-
-**Fallback**: **Smart Notification Toast (Option 4)** - Simple and reliable
-- Minimal implementation
-- Familiar VS Code UX pattern
-- Good for gradual rollout
-
-#### Enhanced Diff Visualization
-
-1. **Improved Tab Naming**:
-   - Pattern: `{filename}: Original ↔ LLM Changes (Editable)`
-   - Include file path and status indicators
-   - Show problem count and tracking status
-
-2. **Section Markers**:
-   - Add visual separators between different change sections
-   - Include section descriptions as temporary comments
-   - Highlight fuzzy matches with confidence indicators
-
-3. **Change Statistics**:
-   - Show lines added/removed per section
-   - Display overall impact summary
-   - Include conflict warnings and resolution info
-
-4. **Proper Cleanup**:
-   - Close diff view after approval/rejection
-   - Clean up temporary files and UI elements
-   - Reset editor state properly
-
-### Phase 3: Advanced Features (Future)
-
-1. **Partial Application**:
-   - Option to apply individual diff sections
-   - Interactive selection of which changes to apply
-
-2. **Diff Statistics**:
-   - Show summary of changes (lines added/removed per section)
-   - Provide overview of total impact
-
-3. **Enhanced Conflict Resolution**:
-   - Interactive conflict resolution UI
-   - Smart merge suggestions
-   - Undo/redo capabilities
-
-## Task Progress
-
-### Phase 1: Core `apply_diff` Implementation ✅ **COMPLETED**
-- [x] **Setup Dependencies**
-  - [x] Add diff generation library (`diff`)
-  - [x] Add fuzzy matching libraries (`fastest-levenshtein`)
-  - [x] Update package.json and install dependencies
-- [x] **Data Structures & Interfaces**
-  - [x] Define `DiffSection` interface
-  - [x] Define `ApplyDiffArgs` interface
-  - [x] Define `MatchingOptions` interface
-  - [x] Define `MatchResult` interface
-  - [x] Define `ValidationResult` interface
-  - [x] Define `ConflictInfo` interface
-- [x] **Core Fuzzy Matching System**
-  - [x] Implement `ContentMatcher` class
-  - [x] Implement exact match strategy
-  - [x] Implement normalized match strategy
-  - [x] Implement contextual search strategy
-  - [x] Implement similarity matching strategy
-  - [x] Implement automated best match selection
-- [x] **Validation System**
-  - [x] Implement overlap detection
-  - [x] Implement content validation with fuzzy matching
-  - [x] Implement conflict detection
-  - [x] Implement confidence scoring
-- [x] **Diff Generation & Application**
-  - [x] Implement unified diff generation
-  - [x] Implement temporary file management
-  - [x] Implement atomic file operations
-  - [x] Implement multiple diff section merging
-- [x] **VS Code Integration**
-  - [x] Implement diff viewer integration
-  - [x] Implement user approval workflow
-  - [x] Implement status indicators
-- [x] **Tool Registration**
-  - [x] Add `apply_diff` tool to `edit-tools.ts`
-  - [x] Register tool in server.ts (via registerEditTools)
-  - [x] Add proper error handling and logging
-  - [x] TypeScript compilation successful
-- [x] **Testing & Validation**
-  - [x] Test single diff scenarios
-  - [x] Test multiple diff scenarios
-  - [x] Test fuzzy matching edge cases
-  - [x] Test error conditions
-  - [x] Verify VS Code integration
-  - [x] **41/42 tests passing - Phase 1 COMPLETE**
-
-### Phase 2: Enhanced User Experience & Diff View Fixes ✅ **COMPLETED**
-- [x] **Critical Bug Fixes**
-  - [x] Fix diff view persistence after applying changes
-  - [x] Implement proper file creation vs. modification flows
-  - [x] Add descriptive tab naming for diff views
-  - [x] Handle temporary file cleanup properly
-- [x] **Enhanced User Approval Interface**
-  - [x] Implement Status Bar Buttons approach (Primary) ⭐
-  - [x] Add proper cleanup of UI elements
-  - [x] Add keyboard shortcuts for approve/reject
-  - [x] Command registration and disposal system
-- [x] **Enhanced Diff Visualization**
-  - [x] Add enhanced tab naming with descriptive patterns
-  - [x] Include change descriptions and context information
-  - [x] Show change statistics and confidence indicators
-  - [x] Improve tab naming with status indicators
-- [x] **Advanced Error Reporting**
-  - [x] Better conflict detection UI
-  - [x] Improved fuzzy matching feedback
-  - [x] Enhanced logging and debugging info
-  - [x] Fixed all string escaping issues and syntax errors
-- [x] **Comprehensive Testing**
-  - [x] Test multiple diff sections (4 simultaneous changes)
-  - [x] Test fuzzy matching with whitespace variations
-  - [x] Test content drift handling
-  - [x] Verify Status Bar Buttons UX
-  - [x] Validate atomic operations and cleanup
-
-### Phase 3: Advanced Features (Future)
-- [ ] **Partial Application Support**
-  - [ ] Individual diff section approval
-  - [ ] Interactive change selection
-- [ ] **Enhanced Statistics & Analytics**
-  - [ ] Detailed change impact analysis
-  - [ ] Performance metrics and optimization
-- [ ] **Advanced Conflict Resolution**
-  - [ ] Interactive merge conflict resolution
-  - [ ] Smart merge suggestions
-  - [ ] Undo/redo capabilities
-
-### Current Status
-✅ **Phase 2 COMPLETED** - Enhanced UX with Status Bar Buttons successfully implemented and tested
-
-### Completed Features
-✅ **Full Fuzzy Matching System** - Handles whitespace, content drift, and similarity matching  
-✅ **Multiple Diff Support** - Apply multiple changes in single operation  
-✅ **VS Code Integration** - Native diff viewer with user approval workflow  
-✅ **Robust Validation** - Conflict detection and confidence scoring  
-✅ **Atomic Operations** - All-or-nothing application with proper cleanup  
-
-### Next Steps - Phase 2 Implementation
-1. **Fix diff view persistence bug** - Ensure proper cleanup of diff tabs
-2. **Implement Status Bar Buttons** - Clean, elegant approval interface
-3. **Add proper file creation/modification flows** - Handle new vs. existing files
-4. **Enhanced tab naming** - Descriptive diff view titles
-5. **Testing & validation** - Ensure all UX improvements work correctly
-
-### UX Design Philosophy
-- **Minimalist**: Don't get in the way of the user's workflow
-- **Contextual**: Provide relevant information at the right time
-- **Elegant**: Modern, sleek appearance that matches VS Code's design language
-- **Efficient**: Quick, keyboard-friendly interactions
-- **Informative**: Clear feedback about what's happening and what actions are available
-
----
-*Implementation started on May 22, 2025*  
-*Phase 1 completed on May 22, 2025*  
-*Phase 2 completed on May 23, 2025*  
-*Based on analysis of Block's vscode-mcp repository*
-
-## Notes
-- **Consolidated from IMPROVED_UX_PLAN.md** - All UX planning now centralized here
-- **Focus on Status Bar Buttons** - Primary recommendation for user approval interface
-- **Critical bug fixes** - Address diff view persistence and file handling issues
-- **Enhanced error handling** - Better user feedback and debugging capabilities
-- **Maintain backward compatibility** - Ensure existing functionality continues to work
-
----
-
-## 🎉 Phase 2 Completion Summary - May 23, 2025
-
-### ✅ Successfully Implemented Status Bar Buttons Interface
-- **Elegant UX**: Replaced intrusive Quick Pick with clean status bar buttons
-- **Three-button System**: Apply (✓), Reject (✗), and Info (ℹ️) buttons
-- **Contextual Information**: Dynamic change statistics and file status
-- **Proper Cleanup**: Automatic disposal of UI elements and temporary files
-
-### ✅ Enhanced Tab Management and File Handling  
-- **Descriptive Tab Names**: `{filename}: Original ↔ LLM Changes (Editable)` pattern
-- **File Detection**: Proper handling of new file creation vs. existing file modification
-- **Enhanced Cleanup**: Multiple tab detection patterns for reliable diff view closure
-- **Improved Error Handling**: Better logging and debugging capabilities
-
-### ✅ Comprehensive Testing Results
-**Test 1 - Multiple Diff Sections**: Applied 4 simultaneous changes to Express.js server
-- Added middleware, enhanced routes, error handling, and server startup improvements
-- All changes applied atomically with perfect validation
-
-**Test 2 - Fuzzy Matching**: Tested whitespace variations and formatting differences  
-- Successfully matched content despite spacing and indentation differences
-- Applied comprehensive input validation and error handling
-
-**Test 3 - Content Drift**: Tested slight content variations and matching confidence
-- Enhanced UserService class with validation and new methods
-- Fuzzy matching successfully handled content variations
-
-### ✅ Technical Achievements
-- **Fixed Syntax Errors**: Resolved all string escaping issues (`\\n` → `\n`)
-- **Code Quality**: Cleaned up orphaned Quick Pick remnants
-- **Extension Packaging**: Successfully built `vscode-mcp-server-0.0.4.vsix` (13.63 MB)
-- **TypeScript Compilation**: No errors or warnings
-
-### 🎯 **PHASE 2 COMPLETE** - Production Ready
-The enhanced `apply_diff` tool now provides:
-- Professional VS Code-native user experience
-- Robust fuzzy matching for real-world scenarios  
-- Multiple diff section support for complex refactoring
-- Comprehensive error handling and validation
-- Atomic operations ensuring data integrity
-
-*Ready for installation and production use!* 🚀
+1. Always run tests after making changes to ensure nothing breaks
+2. Use `npm run watch` during development for auto-compilation
+3. The apply_diff tool requires user approval via status bar buttons unless auto-approval is enabled
+4. Check logs in VS Code Output panel (MCP Server channel) for debugging
