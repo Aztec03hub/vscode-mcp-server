@@ -121,6 +121,13 @@ const COMMAND_DELAY_MS = 50; // PowerShell workaround
 5. Update task lists with checkmarks (✅) as items are completed
 6. Break down large tasks into smaller, manageable subtasks
 
+## CRITICAL: File Reading Instruction
+**MANDATORY**: When using `read_file_code`, ALWAYS read the entire file using:
+- maxCharacters: 200000
+- Read in 1000 line chunks (startLine: 0, endLine: 999, then 1000-1999, etc.)
+- Continue until the whole file is read
+- If smaller chunks are needed, MUST ASK FOR APPROVAL FIRST and receive explicit approval before proceeding
+
 ## Architecture Decisions for Shell Tools
 1. **Shell Registry System**: Centralized management of multiple shells
 2. **Auto-cleanup**: Prevents resource leaks with timed cleanup
@@ -575,6 +582,62 @@ Despite VS Code API limitations, we implemented a consolidated menu using QuickP
 
 **Confidence Level Achieved: 10/10** - All tests passing, comprehensive validation complete
 
+## VS Code Tooltip Persistence Research (2025-06-06)
+
+### Key Findings
+1. **API Limitations**: VS Code does NOT provide public APIs for truly sticky status bar tooltips
+   - `editor.hover.sticky` only applies to editor hovers, not status bar tooltips
+   - GitHub Copilot uses internal/privileged APIs not available to extensions
+   - MarkdownString `supportHtml` is limited and cannot embed true webviews
+
+2. **Current Issues**
+   - Hover provider with pattern `{ scheme: '*', pattern: '**/*' }` overwrites ALL editor hovers
+   - Status bar tooltips disappear on mouse leave by design
+   - No programmatic way to keep tooltips focused or "activated"
+
+3. **Viable Approaches**
+   - **Command Links**: Interactive elements that execute commands keep tooltip somewhat engaged
+   - **Floating Webview**: Small webview panel positioned near status bar (not inline)
+   - **Quick Input/Pick**: Use VS Code's built-in UI elements instead of tooltips
+   - **Custom HTML in Markdown**: Limited styling but can create visual feedback
+
+4. **What Won't Work**
+   - Embedding actual webviews in tooltips (not supported)
+   - Preventing tooltip close on mouse leave (no API)
+   - Using hover providers for status bar items (only for editor content)
+   - JavaScript execution in tooltip HTML (security restricted)
+
+## Tooltip Persistence Implementation (2025-06-06)
+
+### Completed Solutions
+
+1. **Fixed Hover Provider Issue** ✅
+   - Removed overly broad hover provider that was intercepting ALL editor hovers
+   - Pattern `{ scheme: '*', pattern: '**/*' }` was too inclusive
+
+2. **E.2: Floating Webview Implementation** ✅
+   - Created tooltip-like floating webview panel
+   - Styled to match VS Code hover appearance
+   - Stays open until explicitly closed
+   - Full interactivity with command execution
+   - Uses `ViewColumn.Beside` with `preserveFocus: true`
+
+3. **F.x Experimental Approaches** ✅
+   - **F.1**: Focus manipulation with continuous updates
+   - **F.2**: Event interception attempts (limited by sandboxing)
+   - **F.3**: CSS animations and extended hover areas
+   - **F.4**: State manipulation with status bar messages
+
+### Key Findings
+- Status bar tooltips are rendered in a separate layer, not accessible to extensions
+- HTML event handlers in MarkdownString have limited capabilities
+- Command links in tooltips provide the best native interactivity
+- Floating webview panels are the most reliable persistent UI solution
+   - Embedding actual webviews in tooltips (not supported)
+   - Preventing tooltip close on mouse leave (no API)
+   - Using hover providers for status bar items (only for editor content)
+   - JavaScript execution in tooltip HTML (security restricted)
+
 ## Detection System Debugging (2025-06-04)
 
 ### Key Finding: detectDestructiveCommand IS Working
@@ -643,3 +706,132 @@ console.log(`[detectDestructiveCommand] MATCH FOUND! Pattern ${pattern} matched 
 - Fixed validation logic for `endLine: -1` cases to allow empty search
 - Fixed conflict detection between overlapping `endLine: -1` diffs
 - ✅ **FINAL FIX**: Resolved line ending compatibility in test assertions
+
+## CRITICAL MISTAKE: Tooltip Implementation (2025-06-06)
+**WHAT I DID WRONG:**
+1. **E.2 Mistake**: Used `new vscode.MarkdownString()` for the tooltip when I was explicitly told to embed an actual WEBVIEW in the tooltip HTML
+2. **F.x Mistakes**: The HTML is not rendering correctly because VS Code's MarkdownString doesn't support full HTML rendering - it only supports limited tags
+3. **Misunderstood Instructions**: I was supposed to create a raw custom webview element INSIDE the tooltip (like an iframe), not use MarkdownString
+
+**WHAT I SHOULD HAVE DONE:**
+- E.2 should have attempted to embed an actual webview element (iframe or similar) within the tooltip HTML
+- This is experimental and may not work, but that was the point of the trial
+
+**CURRENT STATE:**
+- All F.x buttons are not displaying HTML correctly (limited HTML support in MarkdownString)
+- E.2 is using MarkdownString instead of an embedded webview
+- Need to delete all experimental buttons except 1-5 (delete: a, b, c, a.1, a.2, b.1, c.1, c.2, d.1, d.2, e.1, e.2, e.3, f.1, f.2, f.3, f.4)
+
+## Experimental Button Removal Complete (2025-06-06)
+**STATUS: COMPLETED ✅**
+
+**What was accomplished:**
+- Successfully removed all experimental test buttons (A through F.4)
+- Kept test buttons 1-5 as instructed
+- Fixed all TypeScript errors (0 errors remaining)
+- Restored proper server initialization code
+- File is now clean and functional
+
+**Buttons removed:**
+- testButtonA, testButtonB, testButtonC
+- testButtonA1, testButtonA2
+- testButtonB1
+- testButtonC1, testButtonC2
+- testButtonD1, testButtonD2
+- testButtonE1, testButtonE2, testButtonE3
+- testButtonF1, testButtonF2, testButtonF3, testButtonF4
+
+**Buttons kept:**
+- testButton1 through testButton5 (with their tooltips and functionality intact)
+
+## Experimental Tooltip Persistence Test Plan v4 (2025-06-06)
+
+### Goal
+Find programmatic ways to make VS Code status bar tooltips stay open/sticky.
+
+### Proposed Test Buttons
+
+#### **Button A: Focus-based Activation**
+- **Approach**: Execute `editor.action.showHover` when tooltip should appear
+- **Implementation**: Single command execution on button click
+- **Purpose**: Test if hover command works on status bar items
+
+#### **Button B: Tooltip with Input Element**
+- **Approach**: Embed focusable input element in tooltip HTML
+- **Implementation**: `<input type="text" autofocus />` in MarkdownString
+- **Purpose**: Test if focusable elements keep tooltip open
+
+#### **Button C: Command Link Focus Chain**
+- **Approach**: Command link that re-triggers the same tooltip
+- **Implementation**: Command in tooltip that updates the tooltip content
+- **Purpose**: Test if command execution keeps tooltip active
+
+#### **Button D: Accessibility Focus**
+- **Approach**: Use accessibility-related commands/attributes
+- **Implementation**: `role`, `tabindex`, `aria-` attributes in tooltip
+- **Purpose**: Test if accessibility features affect tooltip persistence
+
+#### **Button E: Mouse Event Attributes**
+- **Approach**: Add mouse event handlers in tooltip HTML
+- **Implementation**: `onmouseover="return false"` and similar
+- **Purpose**: Test if event handlers can prevent tooltip dismissal
+
+#### **Button F: Toggle-based Tooltip**
+- **Approach**: Button click toggles tooltip on/off programmatically
+- **Implementation**: Track state and show/hide tooltip based on clicks
+- **Purpose**: Test programmatic tooltip lifecycle control
+
+#### **Button G: Focus Command After Show**
+- **Approach**: Execute focus-related command immediately after tooltip shows
+- **Implementation**: Set tooltip then execute `workbench.action.focusActiveEditorGroup`
+- **Purpose**: Test if changing focus state affects tooltip
+
+### Key Principles
+1. Each button tests ONE specific approach
+2. No timers or loops - only programmatic triggers
+3. Focus on VS Code commands and DOM attributes
+4. Simple, clean implementations
+
+## ✅ Button H Implementation - Sticky Tooltip Success! (2025-06-09)
+
+### What We Discovered
+**Button H successfully creates sticky tooltips using `workbench.action.showHover`!**
+
+#### The Solution
+1. **Command**: `workbench.action.showHover` (not `editor.action.showAccessibleView` which was hallucinated)
+2. **Behavior**: This command simulates pressing **Ctrl+K Ctrl+I** which:
+   - Makes the tooltip "sticky" (won't disappear on mouse movement)
+   - Allows interaction with links in the tooltip
+   - Shows a blue pixel border highlighting the tooltip
+   - Can be dismissed with ESC
+
+#### Implementation Details
+```typescript
+// Button H command - Clean and simple
+const testButtonHCommand = vscode.commands.registerCommand(
+    'vscode-mcp-server.testButtonH',
+    async () => {
+        try {
+            // Execute the workbench.action.showHover command which is Ctrl+K Ctrl+I
+            await vscode.commands.executeCommand('workbench.action.showHover');
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to execute Ctrl+K Ctrl+I: ${error}`);
+        }
+    }
+);
+```
+
+#### Key Findings
+1. **Correct Command**: `workbench.action.showHover` is the proper VS Code command for sticky tooltips
+2. **Visual Indicator**: Blue pixel border shows when tooltip is in "sticky" mode
+3. **User Experience**: Clicking button H immediately makes the tooltip interactive
+4. **No Global Listeners Needed**: Removed all debug focus listeners - clean implementation
+
+#### Clean Up Performed
+- ✅ Removed all console.log statements from button H implementation
+- ✅ Removed global focus listeners (onDidChangeActiveTextEditor, etc.)
+- ✅ Removed debug logging for focus state
+- ✅ Final implementation is clean and production-ready
+
+### Result
+**Button H provides the exact tooltip persistence behavior we were looking for!** Users can click the button to make any tooltip sticky and interactive, allowing them to click on command links without the tooltip disappearing.
