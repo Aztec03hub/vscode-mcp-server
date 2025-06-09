@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__vscode-mcp-server__read_file_code",
+      "mcp__vscode-mcp-server__apply_diff",
+      "Bash(grep:*)",
+      "mcp__vscode-mcp-server__get_diagnostics_code",
+      "mcp__vscode-mcp-server__search_symbols_code",
+      "mcp__vscode-mcp-server__get_workspace_context"
+    ],
+    "deny": []
+  }
+}
