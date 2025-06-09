@@ -76,7 +76,7 @@ suite('Extension Test Suite', () => {
             update: sinon.stub().resolves()
         };
         globalState.get.withArgs('mcpServerEnabled').returns(true);
-        globalState.get.withArgs('autoApprovalEnabled').returns(false);
+        globalState.get.withArgs('diffAutoApprovalEnabled').returns(false);
         
         // Create a mocked extension context
         context = createMockContext();
@@ -148,10 +148,10 @@ suite('Extension Test Suite', () => {
         );
         assert.strictEqual(toggleServerCall !== undefined, true, 'Toggle server command not registered');
         
-        const toggleAutoApprovalCall = registerCommandStub.getCalls().find(
-            call => call.args[0] === 'vscode-mcp-server.toggleAutoApproval'
+        const toggleDiffAutoApprovalCall = registerCommandStub.getCalls().find(
+            call => call.args[0] === 'vscode-mcp-server.toggleDiffAutoApproval'
         );
-        assert.strictEqual(toggleAutoApprovalCall !== undefined, true, 'Toggle auto-approval command not registered');
+        assert.strictEqual(toggleDiffAutoApprovalCall !== undefined, true, 'Toggle auto-approval command not registered');
     });
 
     test('Deactivate should clean up resources', async () => {

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { createTwoFilesPatch } from 'diff';
 import { distance } from 'fastest-levenshtein';
-import { isAutoApprovalEnabled } from '../extension';
+import { isDiffAutoApprovalEnabled } from '../extension';
 
 // ===== Apply Diff Tool Interfaces =====
 
@@ -1861,7 +1861,7 @@ async function showDiffAndGetApproval(
         confidenceButton.show();
         
         // Keep it visible for a few seconds if auto-approval is on
-        if (isAutoApprovalEnabled()) {
+        if (isDiffAutoApprovalEnabled()) {
             setTimeout(() => {
                 confidenceButton?.dispose();
             }, 5000); // Show for 5 seconds
@@ -1869,7 +1869,7 @@ async function showDiffAndGetApproval(
     }
     
     // Check if auto-approval is enabled
-    if (isAutoApprovalEnabled()) {
+    if (isDiffAutoApprovalEnabled()) {
         console.log(`[showDiffAndGetApproval] Auto-approval is enabled, automatically approving diff`);
         vscode.window.showInformationMessage(`Auto-approved diff for ${filePath} (Auto-Approval Mode is ON)`);
         return true;

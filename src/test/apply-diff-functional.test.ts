@@ -63,8 +63,8 @@ suite('Apply Diff Functional Tests', () => {
 
         // Check auto-approval status
         try {
-            const isAutoApprovalEnabled = await vscode.commands.executeCommand('vscode-mcp-server.isAutoApprovalEnabled');
-            if (!isAutoApprovalEnabled) {
+            const isDiffAutoApprovalEnabled = await vscode.commands.executeCommand('vscode-mcp-server.isDiffAutoApprovalEnabled');
+            if (!isDiffAutoApprovalEnabled) {
                 console.log('\n[TEST WARNING] Auto-Approval Mode is OFF. Tests will timeout waiting for manual approval.');
                 console.log('[TEST WARNING] Please enable Auto-Approval Mode by clicking the status bar button before running tests.\n');
 
@@ -77,7 +77,7 @@ suite('Apply Diff Functional Tests', () => {
                 );
 
                 if (result === 'Enable Auto-Approval') {
-                    await vscode.commands.executeCommand('vscode-mcp-server.toggleAutoApproval');
+                    await vscode.commands.executeCommand('vscode-mcp-server.toggleDiffAutoApproval');
                 }
             } else {
                 console.log('\n[TEST] Auto-Approval Mode is ON. Tests will run without manual intervention.\n');

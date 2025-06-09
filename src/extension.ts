@@ -13,7 +13,7 @@ let sharedTerminal: vscode.Terminal | undefined;
 // Server state - disabled by default
 let serverEnabled: boolean = false;
 // Auto-approval mode for apply_diff
-let autoApprovalEnabled: boolean = false;
+let diffAutoApprovalEnabled: boolean = false;
 let autoApprovalStatusBar: vscode.StatusBarItem | undefined;
 // Shell auto-approval mode - DANGEROUS when enabled
 let shellAutoApprovalEnabled: boolean = false;
@@ -26,27 +26,16 @@ let testButton2: vscode.StatusBarItem | undefined;
 let testButton3: vscode.StatusBarItem | undefined;
 let testButton4: vscode.StatusBarItem | undefined;
 let testButton5: vscode.StatusBarItem | undefined;
-// Click-to-activate test buttons
+// New experimental tooltip buttons
 let testButtonA: vscode.StatusBarItem | undefined;
-let testButtonAActive: boolean = false;
 let testButtonB: vscode.StatusBarItem | undefined;
-let testButtonBActive: boolean = false;
 let testButtonC: vscode.StatusBarItem | undefined;
-let testButtonD1: vscode.StatusBarItem | undefined;
-let testButtonD2: vscode.StatusBarItem | undefined;
+let testButtonD: vscode.StatusBarItem | undefined;
 let testButtonE: vscode.StatusBarItem | undefined;
 let testButtonF: vscode.StatusBarItem | undefined;
-// Fine-grained test buttons
-let testButtonA1: vscode.StatusBarItem | undefined;
-let testButtonA2: vscode.StatusBarItem | undefined;
-let testButtonB1: vscode.StatusBarItem | undefined;
-let testButtonB2: vscode.StatusBarItem | undefined;
-let testButtonC1: vscode.StatusBarItem | undefined;
-let testButtonC2: vscode.StatusBarItem | undefined;
-// New E.x test buttons for tooltip persistence with hover provider focus
-let testButtonE1: vscode.StatusBarItem | undefined;
-let testButtonE2: vscode.StatusBarItem | undefined;
-let testButtonE3: vscode.StatusBarItem | undefined;
+let testButtonG: vscode.StatusBarItem | undefined;
+let testButtonH: vscode.StatusBarItem | undefined;
+
 
 // Terminal name constant
 const TERMINAL_NAME = 'MCP Shell Commands';
@@ -185,12 +174,12 @@ function updateStatusBar(port: number) {
     if (serverEnabled) {
         statusBarItem.text = `$(server) MCP Server: ${port}`;
         statusBarItem.tooltip = `MCP Server running at localhost:${port} (Click to toggle)`;
-        statusBarItem.backgroundColor = undefined;
+        statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     } else {
         statusBarItem.text = `$(server) MCP Server: Off`;
         statusBarItem.tooltip = `MCP Server is disabled (Click to toggle)`;
         // Use a subtle color to indicate disabled state
-        statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     }
 }
 
@@ -200,7 +189,7 @@ function updateAutoApprovalStatusBar() {
         return;
     }
 
-    if (autoApprovalEnabled) {
+    if (diffAutoApprovalEnabled) {
         autoApprovalStatusBar.text = '$(pass-filled) Auto-Approve: ON';
         autoApprovalStatusBar.tooltip = 'Apply Diff Auto-Approval is ENABLED - diffs will be applied automatically without preview (Click to disable)';
         autoApprovalStatusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
@@ -209,6 +198,49 @@ function updateAutoApprovalStatusBar() {
         autoApprovalStatusBar.tooltip = 'Apply Diff Auto-Approval is DISABLED - diffs require manual approval (Click to enable)';
         autoApprovalStatusBar.backgroundColor = undefined;
     }
+}
+
+// Function to generate the tooltip menu content
+function generateTooltipMenu(): vscode.MarkdownString {
+    const tooltip = new vscode.MarkdownString();
+    tooltip.isTrusted = true;
+    tooltip.supportThemeIcons = true;
+    
+    // Get current port from configuration
+    const config = vscode.workspace.getConfiguration('vscode-mcp-server');
+    const port = config.get<number>('port') || 3000;
+    
+    let content = '**VS Code MCP Server**\n\n';
+    
+    // Server status line
+    const serverIcon = serverEnabled ? '$(server-process)' : '$(server)';
+    const serverStatus = serverEnabled ? `Running (Port: ${port})` : 'Inactive';
+    const serverBg = serverEnabled ? 
+        'var(--vscode-statusBarItem-warningBackground)' : 
+        'var(--vscode-statusBarItem-errorBackground)';
+    content += `- ${serverIcon} MCP Server: [<span style="background-color: ${serverBg}">**${serverStatus}**</span>](command:vscode-mcp-server.toggleServer)\n`;
+    
+    // Auto-Approve Diff line
+    const diffStatus = diffAutoApprovalEnabled ? 'ON' : 'OFF';
+    const diffBg = diffAutoApprovalEnabled ? 
+        'var(--vscode-statusBarItem-warningBackground)' : 
+        'var(--vscode-statusBarItem-errorBackground)';
+    content += `- $(pass-filled) Auto-Approve Diff: [<span style="background-color: ${diffBg}">**${diffStatus}**</span>](command:vscode-mcp-server.toggleDiffAutoApproval)\n`;
+    
+    // Auto-Approve Shell line
+    const shellStatus = shellAutoApprovalEnabled ? 'ON' : 'OFF';
+    const shellBg = shellAutoApprovalEnabled ? 
+        'var(--vscode-statusBarItem-warningBackground)' : 
+        'var(--vscode-statusBarItem-errorBackground)';
+    content += `- $(shield) Auto-Approve Shell: [<span style="background-color: ${shellBg}">**${shellStatus}**</span>](command:vscode-mcp-server.toggleShellAutoApproval)\n`;
+    
+    // Separator and additional actions
+    content += '\n---\n\n';
+    content += '[$(info) Show Server Info](command:vscode-mcp-server.showServerInfo) | ';
+    content += '[$(gear) Extension Settings](command:workbench.action.openSettings?["vscode-mcp-server"])';
+    
+    tooltip.value = content;
+    return tooltip;
 }
 
 // Function to update main menu button
@@ -220,23 +252,19 @@ function updateMainMenuButton() {
     // Show server status in the button
     if (serverEnabled) {
         mainMenuButton.text = '$(server-process) MCP Server';
-        mainMenuButton.backgroundColor = undefined;
+        mainMenuButton.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
     } else {
         mainMenuButton.text = '$(server) MCP Server';
-        mainMenuButton.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+        mainMenuButton.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
     }
     
     // Show warning if any auto-approval is enabled
-    if (autoApprovalEnabled || shellAutoApprovalEnabled) {
+    if (diffAutoApprovalEnabled || shellAutoApprovalEnabled) {
         mainMenuButton.text += ' $(warning)';
     }
     
-    // Update tooltip with current status
-    const tooltipLines = ['VS Code MCP Server Menu (Click to open)'];
-    tooltipLines.push(`Server: ${serverEnabled ? 'Running' : 'Stopped'}`);
-    tooltipLines.push(`Auto-Approve Diff: ${autoApprovalEnabled ? 'ON' : 'OFF'}`);
-    tooltipLines.push(`Auto-Approve Shell: ${shellAutoApprovalEnabled ? 'ON ⚠️' : 'OFF'}`);
-    mainMenuButton.tooltip = tooltipLines.join('\n');
+    // Update tooltip with the new menu format
+    mainMenuButton.tooltip = generateTooltipMenu();
 }
 
 // Function to update shell auto-approval status bar
@@ -257,18 +285,18 @@ function updateShellAutoApprovalStatusBar() {
 }
 
 // Function to toggle auto-approval mode
-async function toggleAutoApproval(context: vscode.ExtensionContext) {
-    autoApprovalEnabled = !autoApprovalEnabled;
+async function toggleDiffAutoApproval(context: vscode.ExtensionContext) {
+    diffAutoApprovalEnabled = !diffAutoApprovalEnabled;
     
     // Save state
-    await context.globalState.update('autoApprovalEnabled', autoApprovalEnabled);
+    await context.globalState.update('diffAutoApprovalEnabled', diffAutoApprovalEnabled);
     
     // Update status bar
     updateAutoApprovalStatusBar();
     updateMainMenuButton();
     
     // Show warning when enabling
-    if (autoApprovalEnabled) {
+    if (diffAutoApprovalEnabled) {
         const result = await vscode.window.showWarningMessage(
             'Auto-Approval Mode ENABLED: All apply_diff operations will be automatically approved without preview. This can be dangerous! Use only for testing.',
             { modal: true },
@@ -277,8 +305,8 @@ async function toggleAutoApproval(context: vscode.ExtensionContext) {
         );
         
         if (result === 'Disable') {
-            autoApprovalEnabled = false;
-            await context.globalState.update('autoApprovalEnabled', false);
+            diffAutoApprovalEnabled = false;
+            await context.globalState.update('diffAutoApprovalEnabled', false);
             updateAutoApprovalStatusBar();
         }
     } else {
@@ -332,7 +360,7 @@ export function enableTestMode(): void {
 }
 
 // Export function for other modules to check auto-approval status
-export function isAutoApprovalEnabled(): boolean {
+export function isDiffAutoApprovalEnabled(): boolean {
     // Auto-approve in test mode to prevent dialog timeouts
     if (testModeEnabled) {
         return true;
@@ -341,7 +369,7 @@ export function isAutoApprovalEnabled(): boolean {
     if (process.env.NODE_ENV === 'test' || process.env.VSCODE_TEST === '1') {
         return true;
     }
-    return autoApprovalEnabled;
+    return diffAutoApprovalEnabled;
 }
 
 // Export function for shell tools to check shell auto-approval status
@@ -366,9 +394,9 @@ async function showMainMenu(context: vscode.ExtensionContext): Promise<void> {
             detail: serverEnabled ? `Running at http://localhost:${port}/mcp` : 'Server is currently disabled'
         },
         {
-            label: `$(pass-filled) Auto-Approve (Diff): ${autoApprovalEnabled ? 'ON' : 'OFF'}`,
+            label: `$(pass-filled) Auto-Approve (Diff): ${diffAutoApprovalEnabled ? 'ON' : 'OFF'}`,
             description: 'Toggle automatic approval for diff operations',
-            detail: autoApprovalEnabled ? '⚠️ Diffs will apply automatically' : 'Diffs require manual approval'
+            detail: diffAutoApprovalEnabled ? '⚠️ Diffs will apply automatically' : 'Diffs require manual approval'
         },
         {
             label: `$(shield) Auto-Approve (Shell): ${shellAutoApprovalEnabled ? 'ON' : 'OFF'}`,
@@ -401,7 +429,7 @@ async function showMainMenu(context: vscode.ExtensionContext): Promise<void> {
             if (selected.includes('MCP Server:')) {
                 await toggleServerState(context);
             } else if (selected.includes('Auto-Approve (Diff)')) {
-                await toggleAutoApproval(context);
+                await toggleDiffAutoApproval(context);
             } else if (selected.includes('Auto-Approve (Shell)')) {
                 await toggleShellAutoApproval(context);
             } else if (selected.includes('Show Server Info')) {
@@ -513,13 +541,19 @@ async function toggleServerState(context: vscode.ExtensionContext): Promise<void
     }
     
     logger.info(`[toggleServerState] Toggle operation completed`);
-}
+    }
 
-export async function activate(context: vscode.ExtensionContext) {
+    // State for experimental Button F
+    let tooltipFVisible = false;
+
+    export async function activate(context: vscode.ExtensionContext) {
     logger.info('Activating vscode-mcp-server extension');
     logger.showChannel(); // Show the output channel for easy access to logs
 
     try {
+
+        
+
         // Get configuration
         const config = vscode.workspace.getConfiguration('vscode-mcp-server');
         const defaultEnabled = config.get<boolean>('defaultEnabled') ?? false;
@@ -527,12 +561,12 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Load saved state or use configured default
         serverEnabled = context.globalState.get('mcpServerEnabled', defaultEnabled);
-        autoApprovalEnabled = context.globalState.get('autoApprovalEnabled', false);
+        diffAutoApprovalEnabled = context.globalState.get('diffAutoApprovalEnabled', false);
         shellAutoApprovalEnabled = context.globalState.get('shellAutoApprovalEnabled', false);
         
         logger.info(`[activate] Using port ${port} from configuration`);
         logger.info(`[activate] Server enabled: ${serverEnabled}`);
-        logger.info(`[activate] Auto-approval enabled: ${autoApprovalEnabled}`);
+        logger.info(`[activate] Auto-approval enabled: ${diffAutoApprovalEnabled}`);
         logger.info(`[activate] Shell auto-approval enabled: ${shellAutoApprovalEnabled}`);
         
         // Initialize the shell approval manager
@@ -543,7 +577,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.StatusBarAlignment.Right,
             100
         );
-        mainMenuButton.command = 'vscode-mcp-server.showMainMenu';
+        mainMenuButton.command = 'vscode-mcp-server.showStickyMenu';
         mainMenuButton.text = '$(gear) MCP Server';
         mainMenuButton.tooltip = 'VS Code MCP Server Menu';
         mainMenuButton.show();
@@ -564,7 +598,7 @@ export async function activate(context: vscode.ExtensionContext) {
             vscode.StatusBarAlignment.Right,
             98
         );
-        autoApprovalStatusBar.command = 'vscode-mcp-server.toggleAutoApproval';
+        autoApprovalStatusBar.command = 'vscode-mcp-server.toggleDiffAutoApproval';
         // Don't show: autoApprovalStatusBar.show();
         updateAutoApprovalStatusBar();
         context.subscriptions.push(autoApprovalStatusBar);
@@ -589,7 +623,7 @@ export async function activate(context: vscode.ExtensionContext) {
         tooltip1.supportThemeIcons = true; // Enable $(icon) syntax
         tooltip1.value = `**Test 1: Command Links**\n\n` +
             `[$(server) Toggle Server](command:vscode-mcp-server.toggleServer)\n\n` +
-            `[$(pass-filled) Toggle Diff Auto-Approve](command:vscode-mcp-server.toggleAutoApproval)\n\n` +
+            `[$(pass-filled) Toggle Diff Auto-Approve](command:vscode-mcp-server.toggleDiffAutoApproval)\n\n` +
             `[$(shield) Toggle Shell Auto-Approve](command:vscode-mcp-server.toggleShellAutoApproval)\n\n` +
             `---\n\n` +
             `[$(gear) Open Settings](command:workbench.action.openSettings?["vscode-mcp-server"])`;
@@ -654,7 +688,7 @@ export async function activate(context: vscode.ExtensionContext) {
             `| Feature | Status | Action |\n` +
             `|:--------|:------:|:-------|\n` +
             `| $(server) MCP Server | ✅ Running | [Toggle](command:vscode-mcp-server.toggleServer) |\n` +
-            `| $(pass-filled) Diff Auto | ❌ OFF | [Enable](command:vscode-mcp-server.toggleAutoApproval) |\n` +
+            `| $(pass-filled) Diff Auto | ❌ OFF | [Enable](command:vscode-mcp-server.toggleDiffAutoApproval) |\n` +
             `| $(shield) Shell Auto | ⚠️ ON | [Disable](command:vscode-mcp-server.toggleShellAutoApproval) |\n\n` +
             `---\n\n` +
             `| $(info) [Server Info](command:vscode-mcp-server.showServerInfo) | $(gear) [Settings](command:workbench.action.openSettings) |\n` +
@@ -692,1038 +726,153 @@ export async function activate(context: vscode.ExtensionContext) {
         testButton5.show();
         context.subscriptions.push(testButton5);
         
-        // Test A: Toggle tooltip content on click
+        // Experimental Button A: Focus-based Activation
         testButtonA = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             45
         );
         testButtonA.text = 'A';
-        testButtonA.command = 'vscode-mcp-server.toggleTestA';
-        
-        // Register the toggle command
-        const toggleTestACommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.toggleTestA',
-            () => {
-                testButtonAActive = !testButtonAActive;
-                updateTestButtonA();
-            }
-        );
-        context.subscriptions.push(toggleTestACommand);
-        
-        function updateTestButtonA() {
-            const tooltipA = new vscode.MarkdownString();
-            tooltipA.isTrusted = true;
-            tooltipA.supportThemeIcons = true;
-            tooltipA.supportHtml = true;
-            
-            if (testButtonAActive) {
-                tooltipA.value = `<div style="border: 2px solid #007ACC; padding: 8px; border-radius: 4px;">\n` +
-                    `<strong>🔵 ACTIVE MODE</strong><br><br>\n` +
-                    `The tooltip is now activated!<br>\n` +
-                    `Click button again to deactivate.<br><br>\n` +
-                    `<span style="color: #007ACC;">Border should be blue when active</span>\n` +
-                    `</div>`;
-                if (testButtonA) {
-                    testButtonA.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-                }
-            } else {
-                tooltipA.value = `<div style="border: 1px solid #666; padding: 8px; border-radius: 4px;">\n` +
-                    `<strong>⚪ HOVER MODE</strong><br><br>\n` +
-                    `Click the button to activate!<br>\n` +
-                    `Tooltip will change appearance.<br><br>\n` +
-                    `<span style="color: #666;">Border is gray in hover mode</span>\n` +
-                    `</div>`;
-                if (testButtonA) {
-                    testButtonA.backgroundColor = undefined;
-                }
-            }
-            
-            if (testButtonA) {
-                testButtonA.tooltip = tooltipA;
-            }
-        }
-        
-        updateTestButtonA();
+        testButtonA.command = 'vscode-mcp-server.testButtonA';
+        const tooltipA = new vscode.MarkdownString();
+        tooltipA.isTrusted = true;
+        tooltipA.supportThemeIcons = true;
+        tooltipA.value = `**Button A: Focus-based Activation**\n\n` +
+            `This button executes \`editor.action.showHover\` when clicked.\n\n` +
+            `Testing if hover command works on status bar items.`;
+        testButtonA.tooltip = tooltipA;
         testButtonA.show();
         context.subscriptions.push(testButtonA);
         
-        // Test B: Status bar item state changes
+        // Experimental Button B: Tooltip with Input Element
         testButtonB = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             44
         );
         testButtonB.text = 'B';
-        testButtonB.command = 'vscode-mcp-server.toggleTestB';
-        
-        const toggleTestBCommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.toggleTestB',
-            () => {
-                testButtonBActive = !testButtonBActive;
-                updateTestButtonB();
-            }
-        );
-        context.subscriptions.push(toggleTestBCommand);
-        
-        function updateTestButtonB() {
-            const tooltipB = new vscode.MarkdownString();
-            tooltipB.isTrusted = true;
-            tooltipB.supportHtml = true;
-            
-            if (testButtonBActive) {
-                if (testButtonB) {
-                    testButtonB.text = 'B•'; // Add bullet to show active
-                    testButtonB.color = new vscode.ThemeColor('statusBarItem.prominentForeground');
-                    testButtonB.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-                }
-                
-                tooltipB.value = `<div style="background-color: #007ACC22; padding: 10px;">\n` +
-                    `<h3>Status: ACTIVE ✓</h3>\n` +
-                    `Button appearance changed!<br>\n` +
-                    `- Text: B•<br>\n` +
-                    `- Background: Blue<br>\n` +
-                    `- Foreground: Prominent<br>\n` +
-                    `</div>`;
-            } else {
-                if (testButtonB) {
-                    testButtonB.text = 'B';
-                    testButtonB.color = undefined;
-                    testButtonB.backgroundColor = undefined;
-                }
-                
-                tooltipB.value = `<div style="background-color: #66666622; padding: 10px;">\n` +
-                    `<h3>Status: INACTIVE</h3>\n` +
-                    `Click to activate and change:<br>\n` +
-                    `- Button appearance<br>\n` +
-                    `- Tooltip style<br>\n` +
-                    `- Background color<br>\n` +
-                    `</div>`;
-            }
-            
-            if (testButtonB) {
-                testButtonB.tooltip = tooltipB;
-            }
-        }
-        
-        updateTestButtonB();
+        const tooltipB = new vscode.MarkdownString();
+        tooltipB.isTrusted = true;
+        tooltipB.supportHtml = true;
+        tooltipB.value = `**Button B: Tooltip with Input Element**\n\n` +
+            `<input type="text" autofocus placeholder="Type here..." style="width: 200px; padding: 4px;">\n\n` +
+            `Testing if focusable input keeps tooltip open.`;
+        testButtonB.tooltip = tooltipB;
         testButtonB.show();
         context.subscriptions.push(testButtonB);
         
-        // Test C: Dynamic tooltip with timestamp
+        // Experimental Button C: Command Link Focus Chain
         testButtonC = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             43
         );
         testButtonC.text = 'C';
-        testButtonC.command = 'vscode-mcp-server.clickTestC';
-        
-        let lastClickTime: Date | null = null;
-        
-        const clickTestCCommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestC',
-            () => {
-                lastClickTime = new Date();
-                updateTestButtonC();
-                // Try to keep tooltip open by re-showing the button
-                if (testButtonC) {
-                    testButtonC.hide();
-                    setTimeout(() => {
-                        if (testButtonC) {
-                            testButtonC.show();
-                        }
-                    }, 10);
-                }
-            }
-        );
-        context.subscriptions.push(clickTestCCommand);
-        
-        function updateTestButtonC() {
-            const tooltipC = new vscode.MarkdownString();
-            tooltipC.isTrusted = true;
-            tooltipC.supportHtml = true;
-            
-            const now = new Date();
-            const isRecent = lastClickTime && (now.getTime() - lastClickTime.getTime()) < 5000;
-            
-            tooltipC.value = `<div style="border: 2px solid ${isRecent ? '#00AA00' : '#999999'}; padding: 10px;">\n` +
-                `<strong>Dynamic Update Test</strong><br><br>\n` +
-                `Current time: ${now.toLocaleTimeString()}<br>\n` +
-                `Last clicked: ${lastClickTime ? lastClickTime.toLocaleTimeString() : 'Never'}<br><br>\n` +
-                `${isRecent ? '<span style="color: #00AA00;">✓ Recently clicked (green border)</span>' : '<span style="color: #999999;">Click to update timestamp</span>'}\n` +
-                `</div>`;
-            
-            if (testButtonC) {
-                testButtonC.tooltip = tooltipC;
-            }
-        }
-        
-        // Update every second to show dynamic behavior
-        setInterval(() => updateTestButtonC(), 1000);
-        
-        updateTestButtonC();
+        const tooltipC = new vscode.MarkdownString();
+        tooltipC.isTrusted = true;
+        tooltipC.supportThemeIcons = true;
+        tooltipC.value = `**Button C: Command Link Focus Chain**\n\n` +
+            `[$(refresh) Refresh Tooltip](command:vscode-mcp-server.refreshTooltipC)\n\n` +
+            `Click the command link to re-trigger the tooltip.\n\n` +
+            `Updated: ${new Date().toLocaleTimeString()}`;
+        testButtonC.tooltip = tooltipC;
         testButtonC.show();
         context.subscriptions.push(testButtonC);
         
-        // Test A.1: CSS classes with codicon and theme classes
-        testButtonA1 = vscode.window.createStatusBarItem(
+        // Experimental Button D: Accessibility Focus
+        testButtonD = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             42
         );
-        testButtonA1.text = 'A.1';
-        testButtonA1.command = 'vscode-mcp-server.clickTestA1';
+        testButtonD.text = 'D';
+        const tooltipD = new vscode.MarkdownString();
+        tooltipD.isTrusted = true;
+        tooltipD.supportHtml = true;
+        tooltipD.value = `**Button D: Accessibility Focus**\n\n` +
+            `<div role="dialog" tabindex="0" aria-label="Persistent tooltip">\n` +
+            `  <p>This tooltip has accessibility attributes.</p>\n` +
+            `  <button tabindex="1">Focus Me</button>\n` +
+            `</div>`;
+        testButtonD.tooltip = tooltipD;
+        testButtonD.show();
+        context.subscriptions.push(testButtonD);
         
-        let a1Active = false;
-        const clickTestA1Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestA1',
-            () => {
-                a1Active = !a1Active;
-                updateTestButtonA1();
-            }
-        );
-        context.subscriptions.push(clickTestA1Command);
-        
-        function updateTestButtonA1() {
-            const tooltipA1 = new vscode.MarkdownString();
-            tooltipA1.isTrusted = true;
-            tooltipA1.supportThemeIcons = true;
-            tooltipA1.supportHtml = true;
-            
-            if (a1Active) {
-                tooltipA1.value = `<div class="codicon codicon-check">\n` +
-                    `<span class="codicon codicon-circle-filled"> ACTIVE</span>\n` +
-                    `</div>\n\n` +
-                    `<div class="monaco-editor">\n` +
-                    `<span class="mtk1">Using VS Code internal classes:</span><br>\n` +
-                    `<span class="mtk12">• codicon classes</span><br>\n` +
-                    `<span class="mtk14">• monaco-editor classes</span><br>\n` +
-                    `<span class="mtk16">• theme color classes</span>\n` +
-                    `</div>`;
-                if (testButtonA1) {
-                    testButtonA1.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-                }
-            } else {
-                tooltipA1.value = `<div class="codicon codicon-circle-outline">\n` +
-                    `<span class="codicon codicon-debug-pause"> INACTIVE</span>\n` +
-                    `</div>\n\n` +
-                    `<div class="markdown-body">\n` +
-                    `Click to test CSS classes<br>\n` +
-                    `Looking for blue borders\n` +
-                    `</div>`;
-                if (testButtonA1) {
-                    testButtonA1.backgroundColor = undefined;
-                }
-            }
-            
-            if (testButtonA1) {
-                testButtonA1.tooltip = tooltipA1;
-            }
-        }
-        
-        updateTestButtonA1();
-        testButtonA1.show();
-        context.subscriptions.push(testButtonA1);
-        
-        // Test A.2: Theme-aware CSS variables
-        testButtonA2 = vscode.window.createStatusBarItem(
+        // Experimental Button E: Mouse Event Attributes
+        testButtonE = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             41
         );
-        testButtonA2.text = 'A.2';
-        testButtonA2.command = 'vscode-mcp-server.clickTestA2';
+        testButtonE.text = 'E';
+        const tooltipE = new vscode.MarkdownString();
+        tooltipE.isTrusted = true;
+        tooltipE.supportHtml = true;
+        tooltipE.value = `**Button E: Mouse Event Attributes**\n\n` +
+            `<div onmouseover="return false" onmouseout="return false" onmouseleave="return false">\n` +
+            `  <p>This area prevents mouse events from bubbling.</p>\n` +
+            `  <p>Hover here to test persistence.</p>\n` +
+            `</div>`;
+        testButtonE.tooltip = tooltipE;
+        testButtonE.show();
+        context.subscriptions.push(testButtonE);
         
-        let a2Active = false;
-        const clickTestA2Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestA2',
-            () => {
-                a2Active = !a2Active;
-                updateTestButtonA2();
-            }
-        );
-        context.subscriptions.push(clickTestA2Command);
-        
-        function updateTestButtonA2() {
-            const tooltipA2 = new vscode.MarkdownString();
-            tooltipA2.isTrusted = true;
-            tooltipA2.supportThemeIcons = true;
-            tooltipA2.supportHtml = true;
-            
-            if (a2Active) {
-                tooltipA2.value = `<div style="border: 2px solid var(--vscode-focusBorder); padding: 8px; background: var(--vscode-editor-background);">\n` +
-                    `<strong style="color: var(--vscode-terminal-ansiBlue);">🔵 ACTIVE</strong><br><br>\n` +
-                    `Testing CSS variables:<br>\n` +
-                    `<span style="color: var(--vscode-terminal-ansiGreen);">✓ --vscode-focusBorder</span><br>\n` +
-                    `<span style="color: var(--vscode-terminal-ansiYellow);">✓ --vscode-editor-background</span><br>\n` +
-                    `<span style="color: var(--vscode-terminal-ansiCyan);">✓ --vscode-terminal colors</span>\n` +
-                    `</div>`;
-            } else {
-                tooltipA2.value = `<div style="border: 1px solid var(--vscode-input-border); padding: 8px;">\n` +
-                    `<strong>⚪ INACTIVE</strong><br><br>\n` +
-                    `Click to test CSS variables<br>\n` +
-                    `Should use theme colors\n` +
-                    `</div>`;
-            }
-            
-            if (testButtonA2) {
-                testButtonA2.tooltip = tooltipA2;
-                testButtonA2.backgroundColor = a2Active ? 
-                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
-                    undefined;
-            }
-        }
-        
-        updateTestButtonA2();
-        testButtonA2.show();
-        context.subscriptions.push(testButtonA2);
-        
-        // Test B.1: Webview panel approach
-        testButtonB1 = vscode.window.createStatusBarItem(
+        // Experimental Button F: Toggle-based Tooltip
+        testButtonF = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             40
         );
-        testButtonB1.text = 'B.1';
-        testButtonB1.command = 'vscode-mcp-server.openWebviewB1';
-        
-        let webviewPanelB1: vscode.WebviewPanel | undefined;
-        
-        const openWebviewB1Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.openWebviewB1',
-            () => {
-                if (webviewPanelB1) {
-                    webviewPanelB1.reveal();
-                    return;
-                }
-                
-                // Create webview panel
-                webviewPanelB1 = vscode.window.createWebviewPanel(
-                    'mcpMenuB1',
-                    'MCP Menu (B.1)',
-                    vscode.ViewColumn.Beside,
-                    {
-                        enableScripts: true,
-                        retainContextWhenHidden: true
-                    }
-                );
-                
-                webviewPanelB1.webview.html = getWebviewContentB1();
-                
-                // Handle disposal
-                webviewPanelB1.onDidDispose(() => {
-                    webviewPanelB1 = undefined;
-                });
-                
-                // Handle messages from webview
-                webviewPanelB1.webview.onDidReceiveMessage(
-                    message => {
-                        switch (message.command) {
-                            case 'toggleServer':
-                                vscode.commands.executeCommand('vscode-mcp-server.toggleServer');
-                                break;
-                            case 'close':
-                                webviewPanelB1?.dispose();
-                                break;
-                        }
-                    }
-                );
+        testButtonF.text = 'F';
+        testButtonF.command = 'vscode-mcp-server.toggleTooltipF';
+        const updateTooltipF = () => {
+            if (tooltipFVisible) {
+                const tooltipF = new vscode.MarkdownString();
+                tooltipF.isTrusted = true;
+                tooltipF.value = `**Button F: Toggle-based Tooltip**\n\n` +
+                    `Status: **Visible**\n\n` +
+                    `Click button to hide tooltip.`;
+                testButtonF!.tooltip = tooltipF;
+            } else {
+                testButtonF!.tooltip = 'Click to show persistent tooltip';
             }
-        );
-        context.subscriptions.push(openWebviewB1Command);
+        };
+        updateTooltipF();
+        testButtonF.show();
+        context.subscriptions.push(testButtonF);
         
-        function getWebviewContentB1(): string {
-            return `<!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body {
-                        padding: 0;
-                        margin: 0;
-                        background: var(--vscode-dropdown-background);
-                        color: var(--vscode-dropdown-foreground);
-                        font-family: var(--vscode-font-family);
-                        font-size: var(--vscode-font-size);
-                    }
-                    .menu {
-                        border: 1px solid var(--vscode-focusBorder);
-                        border-radius: 4px;
-                        padding: 4px;
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.16);
-                    }
-                    .menu-item {
-                        padding: 4px 8px;
-                        cursor: pointer;
-                        border-radius: 2px;
-                    }
-                    .menu-item:hover {
-                        background: var(--vscode-list-hoverBackground);
-                    }
-                    .close-btn {
-                        float: right;
-                        cursor: pointer;
-                        opacity: 0.6;
-                    }
-                    .close-btn:hover {
-                        opacity: 1;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="menu">
-                    <span class="close-btn" onclick="closeMenu()">×</span>
-                    <div class="menu-item" onclick="toggleServer()">
-                        🔄 Toggle Server
-                    </div>
-                    <div class="menu-item">
-                        ✅ Auto-Approve: ON
-                    </div>
-                    <div class="menu-item">
-                        🛡️ Shell Auto: OFF
-                    </div>
-                    <hr>
-                    <div class="menu-item">
-                        ℹ️ Server Info
-                    </div>
-                </div>
-                <script>
-                    const vscode = acquireVsCodeApi();
-                    function toggleServer() {
-                        vscode.postMessage({ command: 'toggleServer' });
-                    }
-                    function closeMenu() {
-                        vscode.postMessage({ command: 'close' });
-                    }
-                </script>
-            </body>
-            </html>`;
-        }
-        
-        testButtonB1.tooltip = 'Click to open webview menu panel';
-        testButtonB1.show();
-        context.subscriptions.push(testButtonB1);
-        
-        // Test C.1: Hover provider attempt
-        testButtonC1 = vscode.window.createStatusBarItem(
+        // Experimental Button G: Focus Command After Show
+        testButtonG = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             39
         );
-        if (testButtonC1) {
-            testButtonC1.text = 'C.1​'; // Zero-width space for hover target
-            testButtonC1.command = 'vscode-mcp-server.toggleTestC1';
-        }
+        testButtonG.text = 'G';
+        testButtonG.command = 'vscode-mcp-server.testButtonG';
+        const tooltipG = new vscode.MarkdownString();
+        tooltipG.isTrusted = true;
+        tooltipG.value = `**Button G: Focus Command After Show**\n\n` +
+            `Click button to set tooltip and execute focus command.\n\n` +
+            `This tests programmatic focus after tooltip display.`;
+        testButtonG.tooltip = tooltipG;
+        testButtonG.show();
+        context.subscriptions.push(testButtonG);
         
-        let c1Active = false;
-        const toggleTestC1Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.toggleTestC1',
-            () => {
-                c1Active = !c1Active;
-                updateTestButtonC1();
-            }
-        );
-        context.subscriptions.push(toggleTestC1Command);
-        
-        function updateTestButtonC1() {
-            const tooltipC1 = new vscode.MarkdownString();
-            tooltipC1.isTrusted = true;
-            tooltipC1.supportThemeIcons = true;
-            tooltipC1.supportHtml = true;
-            
-            // Try to make tooltip "sticky" with interactive content
-            tooltipC1.value = `<div onmouseover="this.style.border='2px solid blue'" onmouseout="this.style.border='1px solid gray'" style="border: 1px solid gray; padding: 10px;">\n` +
-                `<strong>${c1Active ? '🔵 ACTIVE' : '⚪ INACTIVE'}</strong><br><br>\n` +
-                `Testing hover persistence:<br>\n` +
-                `<a href="command:vscode-mcp-server.toggleServer">Toggle Server</a><br>\n` +
-                `<a href="command:vscode-mcp-server.toggleAutoApproval">Toggle Auto-Approve</a><br>\n` +
-                `<br>\n` +
-                `<details>\n` +
-                `<summary>More Options...</summary>\n` +
-                `<a href="command:vscode-mcp-server.showServerInfo">Server Info</a><br>\n` +
-                `<a href="command:workbench.action.openSettings">Settings</a>\n` +
-                `</details>\n` +
-                `</div>\n\n` +
-                `<script>console.log('Script test');</script>`; // Test if scripts work
-            
-            if (testButtonC1) {
-                testButtonC1.tooltip = tooltipC1;
-                testButtonC1.backgroundColor = c1Active ? 
-                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
-                    undefined;
-            }
-        }
-        
-        updateTestButtonC1();
-        if (testButtonC1) {
-            testButtonC1.show();
-            context.subscriptions.push(testButtonC1);
-        }
-        
-        // Test C.2: Try to trigger hover state programmatically
-        testButtonC2 = vscode.window.createStatusBarItem(
+        // Test button H: Attempt programmatic tooltip locking
+        testButtonH = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Right,
             38
         );
-        testButtonC2.text = 'C.2';
-        testButtonC2.command = 'vscode-mcp-server.activateHoverC2';
-        
-        let c2HoverActive = false;
-        const activateHoverC2Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.activateHoverC2',
-            async () => {
-                c2HoverActive = !c2HoverActive;
-                
-                // Try various methods to keep tooltip active
-                if (c2HoverActive) {
-                    // Method 1: Rapid show/hide to trigger hover
-                    testButtonC2?.hide();
-                    await new Promise(resolve => setTimeout(resolve, 1));
-                    testButtonC2?.show();
-                    
-                    // Method 2: Focus the status bar area
-                    await vscode.commands.executeCommand('workbench.action.focusStatusBar');
-                    
-                    // Method 3: Update tooltip continuously
-                    const interval = setInterval(() => {
-                        if (!c2HoverActive || !testButtonC2) {
-                            clearInterval(interval);
-                            return;
-                        }
-                        updateTestButtonC2WithTimestamp();
-                    }, 100);
-                }
-                
-                updateTestButtonC2WithTimestamp();
-            }
-        );
-        context.subscriptions.push(activateHoverC2Command);
-        
-        function updateTestButtonC2WithTimestamp() {
-            const tooltipC2 = new vscode.MarkdownString();
-            tooltipC2.isTrusted = true;
-            tooltipC2.supportThemeIcons = true;
-            tooltipC2.supportHtml = true;
-            
-            const timestamp = new Date().toLocaleTimeString();
-            
-            tooltipC2.value = `<div style="padding: 10px; border: 2px solid ${c2HoverActive ? '#007ACC' : '#666666'};">\n` +
-                `<h3>${c2HoverActive ? '🔵 HOVER ACTIVE' : '⚪ HOVER INACTIVE'}</h3>\n` +
-                `<p>Timestamp: ${timestamp}</p>\n` +
-                `<p>Trying to keep hover active via:</p>\n` +
-                `<ul>\n` +
-                `<li>Rapid show/hide</li>\n` +
-                `<li>Focus status bar</li>\n` +
-                `<li>Continuous updates</li>\n` +
-                `</ul>\n` +
-                `<p><a href="command:vscode-mcp-server.toggleServer">Test command link</a></p>\n` +
-                `</div>`;
-            
-            if (testButtonC2) {
-                testButtonC2.tooltip = tooltipC2;
-                testButtonC2.backgroundColor = c2HoverActive ? 
-                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
-                    undefined;
-            }
-        }
-        
-        updateTestButtonC2WithTimestamp();
-        testButtonC2.show();
-        context.subscriptions.push(testButtonC2);
-        
-        // Test D.1: Multiple clickable areas to maintain focus
-        testButtonD1 = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            37
-        );
-        testButtonD1.text = 'D.1';
-        testButtonD1.command = 'vscode-mcp-server.clickTestD1';
-        
-        let d1ClickCount = 0;
-        const clickTestD1Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestD1',
-            () => {
-                d1ClickCount++;
-                updateTestButtonD1();
-            }
-        );
-        context.subscriptions.push(clickTestD1Command);
-        
-        function updateTestButtonD1() {
-            const tooltipD1 = new vscode.MarkdownString();
-            tooltipD1.isTrusted = true;
-            tooltipD1.supportThemeIcons = true;
-            tooltipD1.supportHtml = true;
-            
-            // Create multiple nested clickable areas
-            tooltipD1.value = `<div style="border: 2px solid #007ACC; padding: 4px;">\n` +
-                `<div style="background: #007ACC22; padding: 8px; margin: 2px;">\n` +
-                `<strong>Click Count: ${d1ClickCount}</strong>\n` +
-                `</div>\n` +
-                `<div style="padding: 4px;">\n` +
-                `<table style="width: 100%;">\n` +
-                `<tr>\n` +
-                `<td style="padding: 4px; background: #00AA0022;">\n` +
-                `<a href="command:vscode-mcp-server.toggleServer">$(server) Server</a>\n` +
-                `</td>\n` +
-                `<td style="padding: 4px; background: #AA000022;">\n` +
-                `<a href="command:vscode-mcp-server.toggleAutoApproval">$(pass-filled) Auto</a>\n` +
-                `</td>\n` +
-                `</tr>\n` +
-                `<tr>\n` +
-                `<td style="padding: 4px; background: #AAAA0022;">\n` +
-                `<a href="command:vscode-mcp-server.toggleShellAutoApproval">$(shield) Shell</a>\n` +
-                `</td>\n` +
-                `<td style="padding: 4px; background: #AA00AA22;">\n` +
-                `<a href="command:vscode-mcp-server.showServerInfo">$(info) Info</a>\n` +
-                `</td>\n` +
-                `</tr>\n` +
-                `</table>\n` +
-                `</div>\n` +
-                `<div style="text-align: center; padding: 4px; background: #66666622;">\n` +
-                `<span style="font-size: 10px;">Multiple clickable areas for focus retention</span>\n` +
-                `</div>\n` +
-                `</div>`;
-            
-            if (testButtonD1) {
-                testButtonD1.tooltip = tooltipD1;
-            }
-        }
-        
-        updateTestButtonD1();
-        testButtonD1.show();
-        context.subscriptions.push(testButtonD1);
-        
-        // Test D.2: Data attributes and tabindex
-        testButtonD2 = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            36
-        );
-        testButtonD2.text = 'D.2';
-        testButtonD2.command = 'vscode-mcp-server.clickTestD2';
-        
-        let d2Active = false;
-        const clickTestD2Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestD2',
-            () => {
-                d2Active = !d2Active;
-                updateTestButtonD2();
-            }
-        );
-        context.subscriptions.push(clickTestD2Command);
-        
-        function updateTestButtonD2() {
-            const tooltipD2 = new vscode.MarkdownString();
-            tooltipD2.isTrusted = true;
-            tooltipD2.supportThemeIcons = true;
-            tooltipD2.supportHtml = true;
-            
-            // Try data attributes and focus-related attributes
-            tooltipD2.value = `<div data-code="active" class="${d2Active ? 'active-tooltip' : 'inactive-tooltip'}" style="border: 2px solid ${d2Active ? '#007ACC' : '#666'}; padding: 10px;">\n` +
-                `<h3>${d2Active ? 'ACTIVE STATE' : 'INACTIVE STATE'}</h3>\n` +
-                `<div class="codicon codicon-server" data-href="command:vscode-mcp-server.toggleServer">\n` +
-                `<a href="command:vscode-mcp-server.toggleServer">Toggle Server</a>\n` +
-                `</div>\n` +
-                `<br>\n` +
-                `<div style="background: #007ACC22; padding: 8px;">\n` +
-                `<p>Testing data attributes:</p>\n` +
-                `<ul>\n` +
-                `<li>data-code="active"</li>\n` +
-                `<li>class with state</li>\n` +
-                `<li>nested command links</li>\n` +
-                `</ul>\n` +
-                `</div>\n` +
-                `<br>\n` +
-                `<div style="display: flex; gap: 4px;">\n` +
-                `<span style="flex: 1; background: #00AA0044; padding: 4px; text-align: center;">\n` +
-                `<a href="command:vscode-mcp-server.toggleAutoApproval">Auto</a>\n` +
-                `</span>\n` +
-                `<span style="flex: 1; background: #AA000044; padding: 4px; text-align: center;">\n` +
-                `<a href="command:vscode-mcp-server.toggleShellAutoApproval">Shell</a>\n` +
-                `</span>\n` +
-                `</div>\n` +
-                `</div>`;
-            
-            if (testButtonD2) {
-                testButtonD2.tooltip = tooltipD2;
-                testButtonD2.backgroundColor = d2Active ? 
-                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
-                    undefined;
-            }
-        }
-        
-        updateTestButtonD2();
-        testButtonD2.show();
-        context.subscriptions.push(testButtonD2);
-        
-        // Test E.1: Hover Provider with Command-based Sticky Mode
-        testButtonE1 = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            35
-        );
-        testButtonE1.text = 'E.1';
-        testButtonE1.command = 'vscode-mcp-server.clickTestE1';
-        
-        // State management for sticky mode
-        let e1StickyEnabled = false;
-        let e1Active = false;
-        
-        // Register command to enable sticky mode
-        const enableStickyModeCommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.enableStickyMode',
-            () => {
-                e1StickyEnabled = !e1StickyEnabled;
-                updateTestButtonE1();
-                vscode.window.showInformationMessage(
-                    `Sticky mode ${e1StickyEnabled ? 'ENABLED' : 'DISABLED'} for E.1 tooltip`
-                );
-            }
-        );
-        context.subscriptions.push(enableStickyModeCommand);
-        
-        const clickTestE1Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestE1',
-            () => {
-                e1Active = !e1Active;
-                updateTestButtonE1();
-            }
-        );
-        context.subscriptions.push(clickTestE1Command);
-        
-        function updateTestButtonE1() {
-            const tooltipE1 = new vscode.MarkdownString();
-            tooltipE1.isTrusted = true;
-            tooltipE1.supportThemeIcons = true;
-            tooltipE1.supportHtml = true;
-            
-            // Create a tooltip that leverages command links to stay interactive
-            tooltipE1.value = `<div style="border: 2px solid ${e1Active ? '#00FF00' : '#666666'}; padding: 10px;">\n` +
-                `<h3>${e1Active ? '🟢 E.1 ACTIVE' : '⚪ E.1 INACTIVE'}</h3>\n` +
-                `<p><strong>Hover Provider & Command-Based Sticky Test</strong></p>\n` +
-                `\n` +
-                `<div style="background: ${e1StickyEnabled ? '#00AA0022' : '#AA000022'}; padding: 8px; margin: 8px 0; border-radius: 4px;">\n` +
-                `<p><strong>Sticky Mode: ${e1StickyEnabled ? 'ENABLED ✅' : 'DISABLED ❌'}</strong></p>\n` +
-                `<a href="command:vscode-mcp-server.enableStickyMode" style="font-weight: bold;">\n` +
-                `${e1StickyEnabled ? '🔄 Disable Sticky Mode' : '🔄 Enable Sticky Mode'}\n` +
-                `</a>\n` +
-                `</div>\n` +
-                `\n` +
-                `<p>Interactive Command Links (keeps tooltip open):</p>\n` +
-                `<div style="background: #007ACC22; padding: 8px; margin: 8px 0;">\n` +
-                `<a href="command:vscode-mcp-server.toggleServer">$(server) Toggle Server</a><br>\n` +
-                `<a href="command:vscode-mcp-server.toggleAutoApproval">$(pass-filled) Toggle Auto-Approve</a><br>\n` +
-                `<a href="command:vscode-mcp-server.showServerInfo">$(info) Show Server Info</a><br>\n` +
-                `<a href="command:workbench.action.openSettings">$(gear) Open Settings</a>\n` +
-                `</div>\n` +
-                `\n` +
-                `<details>\n` +
-                `<summary style="cursor: pointer;">Advanced Options...</summary>\n` +
-                `<div style="padding: 8px; margin-top: 4px;">\n` +
-                `<a href="command:editor.action.showHover">Show Hover</a><br>\n` +
-                `<a href="command:workbench.action.focusStatusBar">Focus Status Bar</a><br>\n` +
-                `<a href="command:workbench.action.showCommands">Command Palette</a>\n` +
-                `</div>\n` +
-                `</details>\n` +
-                `\n` +
-                `<p style="font-size: 11px; margin-top: 8px;">\n` +
-                `💡 Tip: Command links keep the tooltip interactive!\n` +
-                `</p>\n` +
-                `</div>`;
-            
-            if (testButtonE1) {
-                testButtonE1.tooltip = tooltipE1;
-                testButtonE1.backgroundColor = e1Active ? 
-                    new vscode.ThemeColor('statusBarItem.prominentBackground') : 
-                    undefined;
-            }
-        }
-        
-        updateTestButtonE1();
-        testButtonE1.show();
-        context.subscriptions.push(testButtonE1);
-        
-        // E.2: WebView Hover Experiment
-        // Create a webview-based hover that can be more persistent
-        let e2WebviewPanel: vscode.WebviewPanel | undefined;
-        
-        const testButtonE2 = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            34
-        );
-        testButtonE2.text = 'E.2';
-        testButtonE2.command = 'vscode-mcp-server.openE2Webview';
-        testButtonE2.tooltip = 'Click to open persistent webview hover';
-        
-        const openE2WebviewCommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.openE2Webview',
-            () => {
-                if (e2WebviewPanel) {
-                    e2WebviewPanel.reveal();
-                    return;
-                }
-                
-                // Create a small webview panel that acts like a hover
-                e2WebviewPanel = vscode.window.createWebviewPanel(
-                    'e2HoverWebview',
-                    'E.2 Persistent Hover',
-                    {
-                        viewColumn: vscode.ViewColumn.Beside,
-                        preserveFocus: true
-                    },
-                    {
-                        enableScripts: true,
-                        retainContextWhenHidden: true
-                    }
-                );
-                
-                e2WebviewPanel.webview.html = getE2WebviewContent();
-                
-                e2WebviewPanel.onDidDispose(() => {
-                    e2WebviewPanel = undefined;
-                });
-                
-                // Handle messages from webview
-                e2WebviewPanel.webview.onDidReceiveMessage(
-                    message => {
-                        switch (message.command) {
-                            case 'executeCommand':
-                                vscode.commands.executeCommand(message.commandId);
-                                break;
-                            case 'close':
-                                e2WebviewPanel?.dispose();
-                                break;
-                        }
-                    }
-                );
-            }
-        );
-        context.subscriptions.push(openE2WebviewCommand);
-        
-        function getE2WebviewContent(): string {
-            return `<!DOCTYPE html>
-            <html>
-            <head>
-                <style>
-                    body {
-                        padding: 10px;
-                        margin: 0;
-                        background: var(--vscode-editor-background);
-                        color: var(--vscode-editor-foreground);
-                        font-family: var(--vscode-font-family);
-                        font-size: var(--vscode-font-size);
-                    }
-                    .hover-box {
-                        border: 2px solid var(--vscode-focusBorder);
-                        border-radius: 4px;
-                        padding: 12px;
-                        background: var(--vscode-editorHoverWidget-background);
-                        box-shadow: 0 2px 8px rgba(0,0,0,0.16);
-                    }
-                    .command-link {
-                        color: var(--vscode-textLink-foreground);
-                        cursor: pointer;
-                        text-decoration: none;
-                        padding: 4px 0;
-                        display: block;
-                    }
-                    .command-link:hover {
-                        text-decoration: underline;
-                    }
-                    .section {
-                        margin: 8px 0;
-                        padding: 8px;
-                        background: var(--vscode-editorWidget-background);
-                        border-radius: 2px;
-                    }
-                    h3 {
-                        margin-top: 0;
-                    }
-                    .close-btn {
-                        float: right;
-                        cursor: pointer;
-                        opacity: 0.6;
-                        font-size: 20px;
-                        line-height: 20px;
-                    }
-                    .close-btn:hover {
-                        opacity: 1;
-                    }
-                </style>
-            </head>
-            <body>
-                <div class="hover-box">
-                    <span class="close-btn" onclick="closeWebview()">&times;</span>
-                    <h3>🟢 E.2: Persistent Webview Hover</h3>
-                    <p>This webview acts as a persistent hover tooltip!</p>
-                    
-                    <div class="section">
-                        <strong>Interactive Commands:</strong><br>
-                        <a class="command-link" onclick="executeCommand('vscode-mcp-server.toggleServer')">🔄 Toggle Server</a>
-                        <a class="command-link" onclick="executeCommand('vscode-mcp-server.toggleAutoApproval')">✅ Toggle Auto-Approve</a>
-                        <a class="command-link" onclick="executeCommand('vscode-mcp-server.showServerInfo')">ℹ️ Show Server Info</a>
-                    </div>
-                    
-                    <div class="section">
-                        <strong>Features:</strong>
-                        <ul>
-                            <li>Stays open indefinitely</li>
-                            <li>Fully interactive</li>
-                            <li>Can execute VS Code commands</li>
-                            <li>Styled like VS Code hovers</li>
-                        </ul>
-                    </div>
-                    
-                    <p style="font-size: 11px; opacity: 0.8; margin-top: 12px;">
-                        💡 This demonstrates true persistence using webviews
-                    </p>
-                </div>
-                
-                <script>
-                    const vscode = acquireVsCodeApi();
-                    
-                    function executeCommand(commandId) {
-                        vscode.postMessage({
-                            command: 'executeCommand',
-                            commandId: commandId
-                        });
-                    }
-                    
-                    function closeWebview() {
-                        vscode.postMessage({ command: 'close' });
-                    }
-                </script>
-            </body>
-            </html>`;
-        }
-        
-        testButtonE2.show();
-        context.subscriptions.push(testButtonE2);
-        
-        // E.3: Enhanced Tooltip with Multiple Command Sections
-        // Test if having many command links creates a more "sticky" experience
-        const testButtonE3 = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Right,
-            33
-        );
-        testButtonE3.text = 'E.3';
-        testButtonE3.command = 'vscode-mcp-server.clickTestE3';
-        
-        let e3MenuState = 'main'; // main, server, settings, advanced
-        
-        const clickTestE3Command = vscode.commands.registerCommand(
-            'vscode-mcp-server.clickTestE3',
-            () => {
-                // Reset to main menu
-                e3MenuState = 'main';
-                updateTestButtonE3();
-            }
-        );
-        context.subscriptions.push(clickTestE3Command);
-        
-        // Commands to navigate between menu states
-        const e3NavigateCommands = [
-            { id: 'vscode-mcp-server.e3GoToServer', state: 'server' },
-            { id: 'vscode-mcp-server.e3GoToSettings', state: 'settings' },
-            { id: 'vscode-mcp-server.e3GoToAdvanced', state: 'advanced' },
-            { id: 'vscode-mcp-server.e3GoToMain', state: 'main' }
-        ];
-        
-        e3NavigateCommands.forEach(({ id, state }) => {
-            const cmd = vscode.commands.registerCommand(id, () => {
-                e3MenuState = state;
-                updateTestButtonE3();
-            });
-            context.subscriptions.push(cmd);
-        });
-        
-        function updateTestButtonE3() {
-            const tooltipE3 = new vscode.MarkdownString();
-            tooltipE3.isTrusted = true;
-            tooltipE3.supportThemeIcons = true;
-            tooltipE3.supportHtml = true;
-            
-            let content = '';
-            
-            switch (e3MenuState) {
-                case 'main':
-                    content = `<div style="border: 2px solid #007ACC; padding: 10px;">\n` +
-                        `<h3>🟢 E.3: Multi-Level Command Menu</h3>\n` +
-                        `<p>Navigate through different sections using commands:</p>\n` +
-                        `<div style="background: #007ACC22; padding: 8px; margin: 8px 0;">\n` +
-                        `<a href="command:vscode-mcp-server.e3GoToServer">$(server) Server Options ➡️</a><br>\n` +
-                        `<a href="command:vscode-mcp-server.e3GoToSettings">$(gear) Settings Menu ➡️</a><br>\n` +
-                        `<a href="command:vscode-mcp-server.e3GoToAdvanced">$(beaker) Advanced Options ➡️</a>\n` +
-                        `</div>\n` +
-                        `<p style="font-size: 11px;">💡 Click any option to navigate</p>\n` +
-                        `</div>`;
-                    break;
-                    
-                case 'server':
-                    content = `<div style="border: 2px solid #00AA00; padding: 10px;">\n` +
-                        `<h3>$(server) Server Options</h3>\n` +
-                        `<a href="command:vscode-mcp-server.e3GoToMain">← Back to Main</a><br><br>\n` +
-                        `<div style="background: #00AA0022; padding: 8px;">\n` +
-                        `<a href="command:vscode-mcp-server.toggleServer">$(server-process) Toggle Server</a><br>\n` +
-                        `<a href="command:vscode-mcp-server.showServerInfo">$(info) Server Info</a><br>\n` +
-                        `<a href="command:vscode-mcp-server.toggleAutoApproval">$(pass-filled) Toggle Auto-Approve</a>\n` +
-                        `</div>\n` +
-                        `</div>`;
-                    break;
-                    
-                case 'settings':
-                    content = `<div style="border: 2px solid #AA00AA; padding: 10px;">\n` +
-                        `<h3>$(gear) Settings Menu</h3>\n` +
-                        `<a href="command:vscode-mcp-server.e3GoToMain">← Back to Main</a><br><br>\n` +
-                        `<div style="background: #AA00AA22; padding: 8px;">\n` +
-                        `<a href="command:workbench.action.openSettings">$(settings-gear) Open Settings</a><br>\n` +
-                        `<a href="command:workbench.action.openGlobalKeybindings">$(keyboard) Keyboard Shortcuts</a><br>\n` +
-                        `<a href="command:workbench.action.selectTheme">$(color-mode) Color Theme</a>\n` +
-                        `</div>\n` +
-                        `</div>`;
-                    break;
-                    
-                case 'advanced':
-                    content = `<div style="border: 2px solid #AAAA00; padding: 10px;">\n` +
-                        `<h3>$(beaker) Advanced Options</h3>\n` +
-                        `<a href="command:vscode-mcp-server.e3GoToMain">← Back to Main</a><br><br>\n` +
-                        `<div style="background: #AAAA0022; padding: 8px;">\n` +
-                        `<a href="command:workbench.action.reloadWindow">$(refresh) Reload Window</a><br>\n` +
-                        `<a href="command:workbench.action.showCommands">$(terminal) Command Palette</a><br>\n` +
-                        `<a href="command:workbench.action.toggleDevTools">$(tools) Toggle DevTools</a>\n` +
-                        `</div>\n` +
-                        `</div>`;
-                    break;
-            }
-            
-            tooltipE3.value = content;
-            
-            if (testButtonE3) {
-                testButtonE3.tooltip = tooltipE3;
-            }
-        }
-        
-        updateTestButtonE3();
-        testButtonE3.show();
-        context.subscriptions.push(testButtonE3);
-        
-        // Register a hover provider for the status bar area (experimental)
-        // Note: This likely won't work for status bar items, but worth trying
-        const hoverProvider = vscode.languages.registerHoverProvider(
-            { scheme: '*', pattern: '**/*' }, // Try to match everything
-            {
-                provideHover(document, position, token) {
-                    // This is a long shot - hover providers are meant for editor content
-                    // But let's see if it affects anything
-                    const hoverContent = new vscode.MarkdownString();
-                    hoverContent.isTrusted = true;
-                    hoverContent.supportThemeIcons = true;
-                    hoverContent.supportHtml = true;
-                    
-                    hoverContent.value = `**MCP Server Hover Provider**\n\n` +
-                        `This hover is provided by a registered hover provider.\n\n` +
-                        `If you see this in the status bar area, it means the hover provider is working!\n\n` +
-                        `[Toggle Server](command:vscode-mcp-server.toggleServer)\n\n` +
-                        `[Show Info](command:vscode-mcp-server.showServerInfo)`;
-                    
-                    return new vscode.Hover(hoverContent);
-                }
-            }
-        );
-        context.subscriptions.push(hoverProvider);
-        
+        testButtonH.text = 'H';
+        testButtonH.command = 'vscode-mcp-server.testButtonH';
+        const tooltipH = new vscode.MarkdownString();
+        tooltipH.isTrusted = true;
+        tooltipH.supportThemeIcons = true;
+        tooltipH.value = `**Button H: Tooltip Lock (Ctrl+K Ctrl+I)**\n\n` +
+            `This button executes the accessible hover command that locks tooltips.\n\n` +
+            `When clicked, it simulates pressing **Ctrl+K Ctrl+I** which:\n\n` +
+            `• Makes the tooltip "sticky" (won't disappear on mouse movement)\n` +
+            `• Allows interaction with links in the tooltip\n` +
+            `• Can be dismissed with ESC\n\n` +
+            `[$(lock) Execute Lock Sequence](command:vscode-mcp-server.testButtonH)`;
+        testButtonH.tooltip = tooltipH;
+        testButtonH.show();
+        context.subscriptions.push(testButtonH);
+
+
         // Only start the server if enabled
         if (serverEnabled) {
             // Create the shared terminal
@@ -1755,6 +904,14 @@ export async function activate(context: vscode.ExtensionContext) {
         updateStatusBar(port);
 
         // Register commands
+        const showStickyMenuCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.showStickyMenu',
+            async () => {
+                // Execute the hover command to make tooltip sticky
+                await vscode.commands.executeCommand('workbench.action.showHover');
+            }
+        );
+        
         const showMainMenuCommand = vscode.commands.registerCommand(
             'vscode-mcp-server.showMainMenu',
             () => showMainMenu(context)
@@ -1776,9 +933,9 @@ export async function activate(context: vscode.ExtensionContext) {
             }
         );
         
-        const toggleAutoApprovalCommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.toggleAutoApproval',
-            () => toggleAutoApproval(context)
+        const toggleDiffAutoApprovalCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleDiffAutoApproval',
+            () => toggleDiffAutoApproval(context)
         );
         
         const toggleShellAutoApprovalCommand = vscode.commands.registerCommand(
@@ -1806,9 +963,9 @@ export async function activate(context: vscode.ExtensionContext) {
         );
         
         // Add command to check auto-approval status (for tests)
-        const isAutoApprovalEnabledCommand = vscode.commands.registerCommand(
-            'vscode-mcp-server.isAutoApprovalEnabled',
-            () => autoApprovalEnabled
+        const isDiffAutoApprovalEnabledCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.isDiffAutoApprovalEnabled',
+            () => diffAutoApprovalEnabled
         );
         
         // Add applyDiff command for testing purposes
@@ -1826,7 +983,68 @@ export async function activate(context: vscode.ExtensionContext) {
                 }
             }
         );
-
+        
+        // Register experimental button commands
+        const testButtonACommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.testButtonA',
+            async () => {
+                // Execute showHover command
+                await vscode.commands.executeCommand('editor.action.showHover');
+            }
+        );
+        
+        const refreshTooltipCCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.refreshTooltipC',
+            () => {
+                if (testButtonC) {
+                    const tooltipC = new vscode.MarkdownString();
+                    tooltipC.isTrusted = true;
+                    tooltipC.supportThemeIcons = true;
+                    tooltipC.value = `**Button C: Command Link Focus Chain**\n\n` +
+                        `[$(refresh) Refresh Tooltip](command:vscode-mcp-server.refreshTooltipC)\n\n` +
+                        `Click the command link to re-trigger the tooltip.\n\n` +
+                        `Updated: ${new Date().toLocaleTimeString()}`;
+                    testButtonC.tooltip = tooltipC;
+                }
+            }
+        );
+        
+        const toggleTooltipFCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.toggleTooltipF',
+            () => {
+                tooltipFVisible = !tooltipFVisible;
+                updateTooltipF();
+            }
+        );
+        
+        const testButtonGCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.testButtonG',
+            async () => {
+                // Update tooltip first
+                if (testButtonG) {
+                    const tooltipG = new vscode.MarkdownString();
+                    tooltipG.isTrusted = true;
+                    tooltipG.value = `**Button G: Focus Command Executed**\n\n` +
+                        `Focus command was executed at: ${new Date().toLocaleTimeString()}\n\n` +
+                        `Check if tooltip stays visible.`;
+                    testButtonG.tooltip = tooltipG;
+                }
+                // Execute focus command
+                await vscode.commands.executeCommand('workbench.action.focusActiveEditorGroup');
+            }
+        );
+        
+        const testButtonHCommand = vscode.commands.registerCommand(
+            'vscode-mcp-server.testButtonH',
+            async () => {
+                try {
+                    // Execute the workbench.action.showHover command which is Ctrl+K Ctrl+I
+                    await vscode.commands.executeCommand('workbench.action.showHover');
+                } catch (error) {
+                    vscode.window.showErrorMessage(`Failed to execute Ctrl+K Ctrl+I: ${error}`);
+                }
+            }
+        );
         // Listen for configuration changes
         const configChangeListener = vscode.workspace.onDidChangeConfiguration(e => {
             if (e.affectsConfiguration('vscode-mcp-server.port')) {
@@ -1844,15 +1062,21 @@ export async function activate(context: vscode.ExtensionContext) {
         // Add all disposables to the context subscriptions
         context.subscriptions.push(
             statusBarItem,
+            showStickyMenuCommand,
             showMainMenuCommand,
             toggleServerCommand,
             showServerInfoCommand,
-            toggleAutoApprovalCommand,
+            toggleDiffAutoApprovalCommand,
             toggleShellAutoApprovalCommand,
             approveShellCommand,
             rejectShellCommand,
-            isAutoApprovalEnabledCommand,
+            isDiffAutoApprovalEnabledCommand,
             applyDiffCommand,
+            testButtonACommand,
+            refreshTooltipCCommand,
+            toggleTooltipFCommand,
+            testButtonGCommand,
+            testButtonHCommand,
             configChangeListener,
             { dispose: async () => mcpServer && await mcpServer.stop() }
         );
@@ -1901,46 +1125,23 @@ export async function deactivate() {
         testButtonC.dispose();
         testButtonC = undefined;
     }
-    if (testButtonA1) {
-        testButtonA1.dispose();
-        testButtonA1 = undefined;
+    if (testButtonD) {
+        testButtonD.dispose();
+        testButtonD = undefined;
     }
-    if (testButtonA2) {
-        testButtonA2.dispose();
-        testButtonA2 = undefined;
+    if (testButtonE) {
+        testButtonE.dispose();
+        testButtonE = undefined;
     }
-    if (testButtonB1) {
-        testButtonB1.dispose();
-        testButtonB1 = undefined;
+    if (testButtonF) {
+        testButtonF.dispose();
+        testButtonF = undefined;
     }
-    if (testButtonC1) {
-        testButtonC1.dispose();
-        testButtonC1 = undefined;
+    if (testButtonG) {
+        testButtonG.dispose();
+        testButtonG = undefined;
     }
-    if (testButtonC2) {
-        testButtonC2.dispose();
-        testButtonC2 = undefined;
-    }
-    if (testButtonD1) {
-        testButtonD1.dispose();
-        testButtonD1 = undefined;
-    }
-    if (testButtonD2) {
-        testButtonD2.dispose();
-        testButtonD2 = undefined;
-    }
-    if (testButtonE1) {
-        testButtonE1.dispose();
-        testButtonE1 = undefined;
-    }
-    if (testButtonE2) {
-        testButtonE2.dispose();
-        testButtonE2 = undefined;
-    }
-    if (testButtonE3) {
-        testButtonE3.dispose();
-        testButtonE3 = undefined;
-    }
+
     
     if (statusBarItem) {
         statusBarItem.dispose();

@@ -861,9 +861,9 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     console.warn(`[Shell Tools] Safety Warning: ${safetyWarning}`);
                     
                     // CRITICAL SAFETY CHECK: Stop execution until user approval
-                    const autoApprovalEnabled = isShellAutoApprovalEnabled();
+                    const diffAutoApprovalEnabled = isShellAutoApprovalEnabled();
                     
-                    if (!autoApprovalEnabled) {
+                    if (!diffAutoApprovalEnabled) {
                         // Request approval via status bar buttons
                         console.log(`[Shell Tools] Requesting user approval for dangerous command: ${command}`);
                         
