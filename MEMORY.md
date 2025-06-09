@@ -633,10 +633,10 @@ Despite VS Code API limitations, we implemented a consolidated menu using QuickP
 - HTML event handlers in MarkdownString have limited capabilities
 - Command links in tooltips provide the best native interactivity
 - Floating webview panels are the most reliable persistent UI solution
-   - Embedding actual webviews in tooltips (not supported)
-   - Preventing tooltip close on mouse leave (no API)
-   - Using hover providers for status bar items (only for editor content)
-   - JavaScript execution in tooltip HTML (security restricted)
+  - Embedding actual webviews in tooltips (not supported)
+  - Preventing tooltip close on mouse leave (no API)
+  - Using hover providers for status bar items (only for editor content)
+  - JavaScript execution in tooltip HTML (security restricted)
 
 ## Detection System Debugging (2025-06-04)
 
