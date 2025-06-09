@@ -106,40 +106,47 @@
 
 ### **Phase 2: Status Bar Menu System**
 
-**🚫 VS CODE LIMITATION**: VS Code does not provide a public API to create inline status bar menus like GitHub Copilot. The inline menu is only available to internal/privileged extensions.
+**FINAL DESIGN DECISION**: Use tooltip-based menu with sticky behavior and clickable status spans.
 
-#### Task 2.1: QuickPick Menu Implementation
-**Implemented Solution**: Single status bar button with QuickPick menu
-- ✅ Single consolidated status bar item
-- ✅ Shows all options in one place
-- ✅ Rich descriptions and details for each option
-  - ❌ Appears at top center, not inline like GitHub Copilot
-- ✅ Best available option within VS Code API constraints
+#### Task 2.1: Tooltip Menu Implementation
+**Final Design**: List-based tooltip menu with colored status spans
+- ✅ Single status bar button with rich tooltip menu
+- ✅ Sticky tooltip behavior using `workbench.action.showHover`
+- ✅ Clickable colored spans for toggling states
+  - ✅ Visual status indicators with background colors
 
-    **Implementation Details**:
-- Main button shows server status with icon
-- Warning indicator when auto-approval is enabled
-- Tooltip shows current status of all features
-- QuickPick menu provides all toggle options
+**Implementation Details**:
+    ```markdown
+**VS Code MCP Server**
 
-- **Status**: ✅ COMPLETED (with API constraints)
+- $(server-process) MCP Server: [<span style="background-color: var(--vscode-statusBarItem-warningBackground)">**Running (Port: 3000)**</span>](command:vscode-mcp-server.toggleServer)
+- $(pass-filled) Auto-Approve Diff: [<span style="background-color: var(--vscode-statusBarItem-errorBackground)">**OFF**</span>](command:vscode-mcp-server.toggleDiffAutoApproval)
+- $(shield) Auto-Approve Shell: [<span style="background-color: var(--vscode-statusBarItem-errorBackground)">**OFF**</span>](command:vscode-mcp-server.toggleShellAutoApproval)
 
-#### Task 2.2: QuickPick Menu Structure
-- **Status**: ✅ COMPLETED
-- Menu shows:
-  - Server status with toggle
-  - Apply Diff auto-approval toggle
-  - Shell auto-approval toggle
-  - Server info command
-  - Settings shortcut
-- Each item has icon, description, and detail text
+---
 
-#### Task 2.3: Main Button Implementation  
-- **Status**: ✅ COMPLETED
-- Single status bar button: `$(gear) MCP Server`
-- Dynamic icon based on server state
-- Warning indicator for auto-approval modes
-- Comprehensive tooltip with all statuses
+[$(info) Show Server Info](command:vscode-mcp-server.showServerInfo) | [$(gear) Extension Settings](command:workbench.action.openSettings?["vscode-mcp-server"])
+```
+
+  - **Status**: ⬜ Not Started
+
+  #### Task 2.2: Tooltip Behavior Implementation
+  - **Status**: ⬜ Not Started
+- **Requirements**:
+  - Automatic sticky tooltip on hover (using `workbench.action.showHover`)
+  - No user-facing sticky toggle or information
+  - Blue pixel border indicates sticky mode
+  - ESC key dismisses tooltip
+  
+#### Task 2.3: Visual State Management
+- **Status**: ⬜ Not Started
+- **Color Scheme**:
+  - Yellow/Warning background: Active/On states
+  - Red/Error background: Inactive/Off states
+- **Dynamic Updates**:
+  - Server icon changes: `$(server-process)` when running, `$(server)` when inactive
+  - Port number shown when server is running
+  - Status text: "Running (Port: XXXX)" vs "Inactive", "ON" vs "OFF"
 
 ---
 
@@ -150,47 +157,107 @@
 // Icon mapping
 const ICONS = {
     server: {
-        active: "$(server-process)",     // Green when active
-        inactive: "$(server)"            // Red when inactive
+        active: "$(server-process)",     // When server is running
+        inactive: "$(server)"            // When server is stopped
     },
     approval: {
-        enabled: "$(pass-filled)",       // Warning color when enabled
-        disabled: "$(circle-outline)"    // Default when disabled
+        diff: "$(pass-filled)",          // For diff auto-approval
+        shell: "$(shield)"               // For shell auto-approval
     },
-    shell: {
-        safe: "$(terminal)",
-        warning: "$(shield)",
-        accept: "$(check)",              // Green checkmark for approval
-        reject: "$(x)"                   // Red X for rejection
-    },
-    menu: "$(gear)"
-}
+    actions: {
+        info: "$(info)",                 // Server info
+        settings: "$(gear)",             // Extension settings
+        accept: "$(check)",              // Approval accept button
+        reject: "$(x)"                   // Approval reject button
+    }
+    }
 ```
 - **Status**: ⬜ Not Started
 
 #### Task 3.2: Color Scheme
 ```typescript
-const COLORS = {
-    serverActive: new vscode.ThemeColor('statusBarItem.prominentForeground'), // Green
-    serverInactive: new vscode.ThemeColor('statusBarItem.errorBackground'), // Red
-    approvalEnabled: new vscode.ThemeColor('statusBarItem.warningBackground'), // Orange
-    approvalDisabled: undefined,
-    danger: new vscode.ThemeColor('statusBarItem.errorBackground'), // Red
-    shellAccept: new vscode.ThemeColor('statusBarItem.prominentBackground'), // Green accept button
-    shellReject: new vscode.ThemeColor('statusBarItem.errorBackground') // Red reject button
+// Simplified color scheme based on final design
+const TOOLTIP_COLORS = {
+    active: 'var(--vscode-statusBarItem-warningBackground)',    // Yellow - Active/On states
+    inactive: 'var(--vscode-statusBarItem-errorBackground)',    // Red - Inactive/Off states
+    }
+
+    // Status bar button colors (for approval buttons)
+    const BUTTON_COLORS = {
+    accept: new vscode.ThemeColor('statusBarItem.warningBackground'),  // Yellow accept button
+    reject: new vscode.ThemeColor('statusBarItem.errorBackground')     // Red reject button
 }
 ```
 - **Status**: ⬜ Not Started
 
-#### Task 3.3: Status Bar Priorities
+#### Task 3.3: Tooltip Menu Implementation
 ```typescript
-// Right-aligned priority order (higher = more right)
-{
-    shellReject: 102,     // Rightmost when approval needed
-    shellAccept: 101,     // Second from right when approval needed  
-    mainMenu: 100,        // Normal rightmost position
-    // Individual items removed (moved to menu)
-    // Approval buttons only show temporarily during safety prompts
+// Main status bar button with tooltip menu
+interface TooltipMenuState {
+    serverEnabled: boolean;
+    serverPort: number;
+    diffAutoApprovalEnabled: boolean;
+    shellAutoApprovalEnabled: boolean;
+    }
+
+// Generate dynamic tooltip content
+function generateTooltipMenu(state: TooltipMenuState): vscode.MarkdownString {
+    const tooltip = new vscode.MarkdownString();
+    tooltip.isTrusted = true;
+    tooltip.supportThemeIcons = true;
+    
+    // Build menu content with dynamic states
+    let content = '**VS Code MCP Server**\n\n';
+    
+    // Server status line
+    const serverIcon = state.serverEnabled ? '$(server-process)' : '$(server)';
+    const serverStatus = state.serverEnabled ? 
+        `Running (Port: ${state.serverPort})` : 'Inactive';
+    const serverBg = state.serverEnabled ? 
+        'var(--vscode-statusBarItem-warningBackground)' : 
+        'var(--vscode-statusBarItem-errorBackground)';
+    
+    content += `- ${serverIcon} MCP Server: [<span style="background-color: ${serverBg}">**${serverStatus}**</span>](command:vscode-mcp-server.toggleServer)\n`;
+    
+    // Similar for other menu items...
+    
+    tooltip.value = content;
+    return tooltip;
+}
+```
+- **Status**: ⬜ Not Started
+
+#### Task 3.4: Status Bar Button Appearance
+```typescript
+// Main menu button configuration
+mainMenuButton = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Right,
+    100  // Priority
+);
+
+// Dynamic button text based on state
+function updateMainMenuButton() {
+    if (!mainMenuButton) return;
+    
+    // Show server status in button
+    if (serverEnabled) {
+        mainMenuButton.text = '$(server-process) MCP Server';
+        mainMenuButton.backgroundColor = undefined;
+    } else {
+        mainMenuButton.text = '$(server) MCP Server';
+        mainMenuButton.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+    }
+    
+    // Add warning indicator if any auto-approval is enabled
+    if (diffAutoApprovalEnabled || shellAutoApprovalEnabled) {
+        mainMenuButton.text += ' $(warning)';
+    }
+    
+    // Set tooltip with full menu
+    mainMenuButton.tooltip = generateTooltipMenu(currentState);
+    
+    // Command to make tooltip sticky on click
+    mainMenuButton.command = 'vscode-mcp-server.showStickyMenu';
 }
 ```
 - **Status**: ⬜ Not Started
@@ -288,30 +355,6 @@ describe('Status Bar Menu System', () => {
 
 ## 🔧 IMPLEMENTATION DETAILS
 
-### **File Structure Changes**
-
-```
-src/
-├── extension.ts (major refactor)
-│   ├── Remove individual status bar items
-│   ├── Add main menu system
-│   ├── Add shell approval state management
-│   ├── Add status bar approval buttons system
-│   └── Implement popup menu logic
-├── tools/shell-tools.ts (critical safety fix)
-│   ├── Add approval check before execution
-│   ├── Integrate with extension approval state
-│   └── Enhance safety warning system
-├── ui/ (new directory)
-│   ├── menu-manager.ts (menu system)
-│   ├── approval-buttons.ts (status bar approval UX)
-│   └── status-indicators.ts (visual components)
-    └── test/ui/ (new test directory)
-    ├── menu.test.ts
-    ├── approval-buttons.test.ts
-    └── safety.test.ts
-```
-
 ### **Key Dependencies**
 
 ```typescript
@@ -348,9 +391,9 @@ import {
 
     // In execute_shell_command_code tool:
         if (safetyWarning) {
-const autoApprovalEnabled = isShellAutoApprovalEnabled();
+const diffAutoApprovalEnabled = isShellAutoApprovalEnabled();
 
-if (!autoApprovalEnabled) {
+if (!diffAutoApprovalEnabled) {
     const approved = await requestShellCommandApproval(command, safetyWarning);
     if (!approved) {
         registry.updateShellStatus(managedShell.id, 'idle');
@@ -363,7 +406,35 @@ if (!autoApprovalEnabled) {
 
 ---
 
-## ⚡ EXECUTION TIMELINE
+## 📄 KEY IMPLEMENTATION NOTES
+
+### **Tooltip Menu Behavior**
+1. **Sticky by Default**: When user hovers over the main menu button, automatically execute `workbench.action.showHover` to make tooltip sticky
+2. **No User Choice**: Do not inform users about sticky behavior or provide toggle - it's automatic
+3. **Visual Indicator**: Blue pixel border shows when tooltip is in sticky mode
+4. **Dismissal**: Users can press ESC to close the tooltip
+
+### **Color Logic**
+- **Yellow Background** (`statusBarItem.warningBackground`): Used for all ACTIVE/ON states
+  - Server running
+  - Auto-approval enabled (both diff and shell)
+- **Red Background** (`statusBarItem.errorBackground`): Used for all INACTIVE/OFF states
+  - Server stopped
+  - Auto-approval disabled
+
+### **Clickable Status Spans**
+- Each colored status span is wrapped in a command link
+- Clicking the colored area toggles the respective feature
+- Visual feedback through immediate color change
+
+### **Status Bar Button States**
+- **Normal**: Shows server icon and "MCP Server" text
+- **Warning**: Adds `$(warning)` icon when any auto-approval is enabled
+- **Background Color**: Yellow when server is stopped (to draw attention)
+
+---
+
+## 🐛 EXECUTION TIMELINE
 
 ### **Immediate Implementation (Phase 1 - Critical Safety)**
 **Must be completed in order:**
@@ -410,28 +481,6 @@ if (!autoApprovalEnabled) {
 - ⬜ Performance impact minimized
 - ⬜ Error handling robust
 - ⬜ Test coverage > 90%
-
----
-
-## 🚀 FUTURE ENHANCEMENTS
-
-### **Advanced Safety Features**
-- ⬜ Command whitelist/blacklist management
-- ⬜ User-defined safety rules
-- ⬜ Command history with risk assessment
-- ⬜ Integration with external security tools
-
-### **Enhanced Menu System**
-- ⬜ Customizable menu layout
-- ⬜ Keyboard shortcuts
-- ⬜ Context-sensitive options
-- ⬜ Recent commands history
-
-### **Professional UX**
-- ⬜ Custom icons and branding
-- ⬜ Animation and transitions
-- ⬜ Advanced tooltips
-- ⬜ Help and documentation integration
 
 ---
 
