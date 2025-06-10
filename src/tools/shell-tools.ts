@@ -1,3 +1,26 @@
+/**
+ * Shell Tools Module for VS Code MCP Server
+ * 
+ * This module provides shell command execution and management tools with intelligent
+ * timeout handling to support both quick commands and long-running interactive sessions.
+ * 
+ * Key Features:
+ * - Shell Registry: Manages up to 8 concurrent shell sessions with auto-cleanup
+ * - Timeout Reset: Prevents premature timeouts during interactive workflows
+ * - Output Management: Handles large outputs with file storage and truncation
+ * - Safety Warnings: Detects potentially destructive commands
+ * - Interactive Detection: Identifies prompts that need user input
+ * 
+ * Timeout Behavior:
+ * - Default commands: 15-second timeout
+ * - Interactive commands: 45-second timeout
+ * - Background processes: No timeout
+ * - Timeouts reset on new commands or input to support multi-step workflows
+ * 
+ * This ensures tools like 'npm create', 'git rebase -i', and database migrations
+ * can complete without interruption while still preventing hanging shells.
+ */
+
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -11,10 +34,13 @@ const STREAM_TIMEOUT_MS = 30000; // 30 seconds to wait for command stream
 const COMMAND_DELAY_MS = 50; // 50ms delay after PowerShell commands (VSCode Bug #237208 workaround)
 
 // Shell Registry Configuration
-const MAX_SHELLS = 8; // Maximum number of concurrent shells
-const SHELL_CLEANUP_TIMEOUT = 5 * 60 * 1000; // 5 minutes auto-cleanup for unused shells
-const INTERACTIVE_TIMEOUT_MS = 45000; // 45 seconds timeout for interactive commands
-const DEFAULT_TIMEOUT_MS = 15000; // 15 seconds timeout for default commands
+const MAX_SHELLS = 8; // Maximum number of concurrent shells to prevent resource exhaustion
+const SHELL_CLEANUP_TIMEOUT = 5 * 60 * 1000; // 5 minutes - auto-cleanup for idle shells to free resources
+
+// Timeout Configuration - These values balance responsiveness with support for interactive workflows
+const DEFAULT_TIMEOUT_MS = 15000; // 15 seconds - for regular commands (ls, echo, git status, etc.)
+const INTERACTIVE_TIMEOUT_MS = 45000; // 45 seconds - for interactive commands (npm create, confirmations, etc.)
+// Note: Timeouts reset on new commands or input, so multi-step workflows won't be interrupted
 
 // Output Management Configuration (Task 4.1)
 const DEFAULT_OUTPUT_CHARACTER_LIMIT = 100000; // 100k characters maximum
@@ -79,9 +105,6 @@ const INTERACTIVE_KEYWORDS = [
     '[yes/no]'
 ];
 
-// Shell status types
-type ShellStatus = 'idle' | 'busy' | 'waiting-for-input' | 'crashed';
-
 // Interface for managed shell information
 interface ManagedShell {
     id: string;
@@ -92,6 +115,125 @@ interface ManagedShell {
     status: ShellStatus;
     currentDirectory?: string;
     runningCommand?: string;
+    activeTimeout?: NodeJS.Timeout;     // Track the active timeout handle for this shell
+    timeoutEndTime?: Date;              // When the current timeout will expire (used for remaining time calculation)
+    timeoutDuration?: number;           // Duration of the current timeout in ms (15s default, 45s interactive)
+    timeoutController?: AbortController; // For cancellable async operations (allows aborting on timeout)
+}
+
+// Shell status types
+type ShellStatus = 'idle' | 'busy' | 'waiting-for-input' | 'crashed';
+
+/**
+ * Shell Timeout Manager Class
+ * 
+ * Centralized timeout management for shell commands. This class ensures that:
+ * - Each shell can have only one active timeout at a time
+ * - Timeouts can be reset when new activity occurs (commands or input)
+ * - Proper cleanup happens to prevent memory leaks
+ * - Timeout information is available for status display
+ * 
+ * The timeout reset mechanism prevents premature timeouts during interactive
+ * sessions where users need to provide multiple inputs or run sequential commands.
+ */
+    class ShellTimeoutManager {
+    private static timeouts: Map<string, {
+        timeout: NodeJS.Timeout;
+        endTime: Date;
+        duration: number;
+        controller: AbortController;
+    }> = new Map();
+    
+    /**
+     * Sets a timeout for a shell, cancelling any existing timeout
+     */
+    static setShellTimeout(
+        shellId: string, 
+        timeoutMs: number, 
+        onTimeout: () => void
+    ): AbortController {
+        // Clear existing timeout if any
+        this.clearShellTimeout(shellId);
+        
+        // Create new abort controller
+        const controller = new AbortController();
+        
+        // Set new timeout
+        const timeout = setTimeout(() => {
+            if (!controller.signal.aborted) {
+                onTimeout();
+                this.timeouts.delete(shellId);
+            }
+        }, timeoutMs);
+        
+        // Store timeout info
+        this.timeouts.set(shellId, {
+            timeout,
+            endTime: new Date(Date.now() + timeoutMs),
+            duration: timeoutMs,
+            controller
+        });
+        
+        console.log(`[ShellTimeoutManager] Set timeout for shell ${shellId}: ${timeoutMs}ms`);
+        return controller;
+    }
+    
+    /**
+     * Clears the timeout for a shell
+     */
+    static clearShellTimeout(shellId: string): void {
+        const timeoutInfo = this.timeouts.get(shellId);
+        if (timeoutInfo) {
+            clearTimeout(timeoutInfo.timeout);
+            timeoutInfo.controller.abort();
+            this.timeouts.delete(shellId);
+            console.log(`[ShellTimeoutManager] Cleared timeout for shell ${shellId}`);
+        }
+    }
+    
+    /**
+     * Resets the timeout for a shell with a new duration
+     */
+    static resetShellTimeout(
+        shellId: string, 
+        newTimeoutMs: number, 
+        onTimeout: () => void
+    ): AbortController {
+        console.log(`[ShellTimeoutManager] Resetting timeout for shell ${shellId}: ${newTimeoutMs}ms`);
+        return this.setShellTimeout(shellId, newTimeoutMs, onTimeout);
+    }
+    
+    /**
+     * Gets timeout information for a shell
+     */
+    static getTimeoutInfo(shellId: string): { 
+        remaining: number; 
+        total: number 
+    } | null {
+        const timeoutInfo = this.timeouts.get(shellId);
+        if (!timeoutInfo) {
+            return null;
+        }
+        
+        const remaining = Math.max(0, 
+            timeoutInfo.endTime.getTime() - Date.now()
+        );
+        
+        return {
+            remaining,
+            total: timeoutInfo.duration
+        };
+    }
+    
+    /**
+     * Cleans up all timeouts (for disposal)
+     */
+    static dispose(): void {
+        console.log(`[ShellTimeoutManager] Disposing all timeouts (${this.timeouts.size} active)`);
+        for (const [shellId] of this.timeouts) {
+            this.clearShellTimeout(shellId);
+        }
+    }
 }
 
 // Singleton Shell Registry Class
@@ -304,6 +446,9 @@ class ShellRegistry {
      * Disposes all shells and cleanup timer
      */
     public dispose(): void {
+        // Clear all shell timeouts first
+        ShellTimeoutManager.dispose();
+        
         if (this.cleanupTimer) {
             clearInterval(this.cleanupTimer);
         }
@@ -631,14 +776,17 @@ async function waitForShellIntegration(terminal: vscode.Terminal, timeout = SHEL
  * @param terminal The terminal with shell integration
  * @param command The command to execute
  * @param cwd Optional working directory for the command
- * @returns Promise that resolves with the command output
+ * @param timeoutMs Timeout in milliseconds
+ * @param shellId Optional shell ID for timeout tracking
+ * @returns Promise that resolves with the command output and abort status
  */
-export async function executeShellCommand(
+    export async function executeShellCommand(
     terminal: vscode.Terminal,
     command: string,
     cwd?: string,
-    timeoutMs: number = STREAM_TIMEOUT_MS
-): Promise<{ output: string }> {
+    timeoutMs: number = STREAM_TIMEOUT_MS,
+    shellId?: string
+): Promise<{ output: string; aborted?: boolean }> {
     terminal.show();
     
     // Build full command including cd if cwd is specified
@@ -664,6 +812,19 @@ export async function executeShellCommand(
     // Capture output using the stream with timeout handling
     let output = '';
     let streamCompleted = false;
+    let abortController: AbortController | undefined;
+    let timeoutId: NodeJS.Timeout | undefined;
+    
+    // Set up cancellable timeout for this shell if shellId provided
+    if (shellId) {
+        abortController = ShellTimeoutManager.setShellTimeout(
+            shellId,
+            timeoutMs,
+            () => {
+                console.warn(`[Shell Tools] Command timeout for shell ${shellId}`);
+            }
+        );
+    }
     
     try {
         // Create a promise for stream reading
@@ -671,6 +832,11 @@ export async function executeShellCommand(
             try {
                 const outputStream = (execution as any).read();
                 for await (const data of outputStream) {
+                    // Check if aborted
+                    if (abortController?.signal.aborted) {
+                        console.log(`[Shell Tools] Stream reading aborted for shell ${shellId}`);
+                        break;
+                    }
                     output += data;
                 }
                 streamCompleted = true;
@@ -688,7 +854,12 @@ export async function executeShellCommand(
         
         // Create a timeout promise that can resolve with partial output
         const timeoutPromise = new Promise<string>((resolve, reject) => {
-            setTimeout(() => {
+            timeoutId = setTimeout(() => {
+                // Check if already aborted by ShellTimeoutManager
+                if (abortController?.signal.aborted) {
+                    reject(new Error(`Command aborted by timeout manager after ${timeoutMs}ms.`));
+                    return;
+                }
                 // If we have some output, don't reject - just return what we have
                 if (output.length > 0) {
                     console.warn(`[Shell Tools] Stream timeout but have output (${output.length} chars), using partial output`);
@@ -708,14 +879,37 @@ export async function executeShellCommand(
             output = result;
         }
         
+        // Clear timeout on successful completion
+        if (shellId && streamCompleted) {
+            ShellTimeoutManager.clearShellTimeout(shellId);
+        }
+        
+        // Clear local timeout if it exists
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+        
         console.log(`[Shell Tools] Command completed ${streamCompleted ? 'fully' : 'partially'}, output length: ${output.length}`);
         
     } catch (error) {
+        // Clear timeouts on error
+        if (shellId) {
+            ShellTimeoutManager.clearShellTimeout(shellId);
+        }
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+        
         console.error(`[Shell Tools] Command execution error:`, error);
+        
+        // Check if aborted by timeout manager
+        if (abortController?.signal.aborted) {
+            return { output, aborted: true };
+        }
         
         // Enhanced error handling with fallback information
         const errorMessage = error instanceof Error ? error.message : String(error);
-        if (errorMessage.includes('timeout')) {
+        if (errorMessage.includes('timeout') || errorMessage.includes('aborted')) {
             throw new Error(`Shell command timed out after ${timeoutMs / 1000} seconds. ` +
                           `This may be due to VSCode shell integration issues. ` +
                           `Try running the command manually or restarting the terminal. ` +
@@ -725,7 +919,7 @@ export async function executeShellCommand(
         throw new Error(`Failed to read command output: ${errorMessage}`);
     }
     
-    return { output };
+    return { output, aborted: false };
 }
 
 /**
@@ -782,8 +976,19 @@ export async function testShellIntegrationCwd(): Promise<string> {
 
 /**
  * Registers MCP shell-related tools with the server
+ * 
+ * This function registers all shell-related MCP tools including:
+ * - execute_shell_command_code: Execute commands with timeout reset on new commands
+ * - get_workspace_context: Get workspace and project information
+ * - send_input_to_shell: Send input with timeout reset for interactive sessions
+ * - list_active_shells: List shells with timeout status information
+ * - test_shell_cwd: Test shell integration timing (development tool)
+ * 
+ * The shell tools feature intelligent timeout management that prevents premature
+ * timeouts during interactive sessions by resetting timeouts on new activity.
+ * 
  * @param server MCP server instance
- * @param terminal The terminal to use for command execution
+ * @param terminal The terminal to use for command execution (deprecated)
  */
 export function registerShellTools(server: McpServer, terminal?: vscode.Terminal): void {
     // Add execute_shell_command tool
@@ -894,6 +1099,14 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     }
                 }
                 
+                // Clear any existing timeout for this shell before executing new command
+                // This is crucial for preventing premature timeouts when users run multiple
+                // commands in sequence. Each new command gets a fresh timeout period.
+                if (managedShell.activeTimeout) {
+                    console.log(`[Shell Tools] Clearing existing timeout for shell ${managedShell.id}`);
+                    ShellTimeoutManager.clearShellTimeout(managedShell.id);
+                }
+                
                 // Update shell status to busy (only if command is approved or safe)
                 registry.updateShellStatus(managedShell.id, 'busy', command);
                 
@@ -942,13 +1155,22 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 const timeoutMs = interactive ? INTERACTIVE_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
                 let output: string;
                 let timedOut = false;
+                let aborted = false;
                 
                 try {
-                    const result = await executeShellCommand(terminal, command, cwd, timeoutMs);
+                    const result = await executeShellCommand(terminal, command, cwd, timeoutMs, managedShell.id);
                     output = result.output;
+                    aborted = result.aborted || false;
+                    
+                    // Update managed shell with timeout info if command is still running
+                    const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(managedShell.id);
+                    if (timeoutInfo) {
+                        managedShell.timeoutDuration = timeoutInfo.total;
+                        managedShell.timeoutEndTime = new Date(Date.now() + timeoutInfo.remaining);
+                    }
                 } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : String(error);
-                    if (errorMessage.includes('timeout')) {
+                    if (errorMessage.includes('timeout') || aborted) {
                         timedOut = true;
                         output = `Command timed out after ${timeoutMs / 1000} seconds.`;
                         if (interactive) {
@@ -1190,6 +1412,35 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 const inputText = includeNewline ? input + '\n' : input;
                 shell.terminal.sendText(inputText, false); // false = don't add extra newline
                 
+                // Reset timeout for interactive shells since user is actively interacting
+                // This is essential for multi-step interactive workflows like:
+                // - npm create svelte@latest (multiple prompts)
+                // - git interactive rebase (multiple confirmations)
+                // - Database migrations with confirmations
+                // Each input resets the timeout to prevent interruption.
+                if (shell.status === 'waiting-for-input' || shell.status === 'busy') {
+                    console.log(`[Shell Tools] Resetting timeout for shell ${shellId} after input`);
+                    
+                    // Use interactive timeout (45s) since user is actively interacting
+                    // This gives users enough time to read prompts and make decisions
+                    ShellTimeoutManager.resetShellTimeout(
+                        shellId,
+                        INTERACTIVE_TIMEOUT_MS,
+                        () => {
+                            // Update shell status on timeout
+                            registry.updateShellStatus(shellId, 'idle');
+                            console.warn(`[Shell Tools] Shell ${shellId} timed out after input`);
+                        }
+                    );
+                    
+                    // Update timeout tracking in managed shell
+                    const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(shellId);
+                    if (timeoutInfo) {
+                        shell.timeoutDuration = timeoutInfo.total;
+                        shell.timeoutEndTime = new Date(Date.now() + timeoutInfo.remaining);
+                    }
+                }
+                
                 // Update shell status and last used time
                 registry.updateShellStatus(shellId, 'busy');
                 
@@ -1277,12 +1528,26 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     const age = Math.round((new Date().getTime() - shell.createdAt.getTime()) / 1000 / 60); // minutes
                     const lastUsed = Math.round((new Date().getTime() - shell.lastUsed.getTime()) / 1000 / 60); // minutes
                     
+                    // Get timeout information
+                    const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(shell.id);
+                    let timeoutStatus = '';
+                    if (timeoutInfo && timeoutInfo.remaining > 0) {
+                        const remainingSec = Math.round(timeoutInfo.remaining / 1000);
+                        const totalSec = Math.round(timeoutInfo.total / 1000);
+                        timeoutStatus = `\n  - Timeout: ${remainingSec}s remaining (of ${totalSec}s total)`;
+                        
+                        if (remainingSec < 5) {
+                            timeoutStatus += ' ⚠️ EXPIRING SOON';
+                        }
+                    }
+                    
                     return `**${shell.id}** (${shell.name})\n` +
                            `  - Status: ${shell.status}\n` +
                            `  - Current Directory: ${shell.currentDirectory || 'Unknown'}\n` +
                            `  - Running Command: ${shell.runningCommand || 'None'}\n` +
                            `  - Created: ${age} minutes ago\n` +
-                           `  - Last Used: ${lastUsed} minutes ago`;
+                           `  - Last Used: ${lastUsed} minutes ago` +
+                           timeoutStatus;
                 }).join('\n\n');
                 
                 const result: CallToolResult = {
@@ -1320,5 +1585,8 @@ export {
     OUTPUT_DIRECTORY,
     DESTRUCTIVE_PATTERNS,
     INTERACTIVE_PATTERNS,
-    INTERACTIVE_KEYWORDS
+    INTERACTIVE_KEYWORDS,
+    ShellTimeoutManager,
+    DEFAULT_TIMEOUT_MS,
+    INTERACTIVE_TIMEOUT_MS
 };
