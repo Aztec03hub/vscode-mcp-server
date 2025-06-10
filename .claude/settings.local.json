@@ -6,7 +6,8 @@
       "Bash(grep:*)",
       "mcp__vscode-mcp-server__get_diagnostics_code",
       "mcp__vscode-mcp-server__search_symbols_code",
-      "mcp__vscode-mcp-server__get_workspace_context"
+      "mcp__vscode-mcp-server__get_workspace_context",
+      "mcp__vscode-mcp-server__list_files_code"
     ],
     "deny": []
   }
