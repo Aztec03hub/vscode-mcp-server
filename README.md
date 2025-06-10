@@ -7,7 +7,7 @@ This extension can allow for execution of shell commands. This means that there 
 PRs are welcome!
 
 ## Demo Video
-https://github.com/user-attachments/assets/20b87dfb-fc39-4710-a910-b9481dde1e90
+<https://github.com/user-attachments/assets/20b87dfb-fc39-4710-a910-b9481dde1e90>
 
 ## Installation
 
@@ -36,8 +36,6 @@ Before running code tools that will make any modification to code, always presen
 
 IMPORTANT: Only run code tools that will modify code after presenting such a plan to the user, and receiving explicit approval. Approval must be given each time; prior approval for a change does not imply that subsequent changes are approved.
 ```
-
-
 
 This extension serves as a Model Context Protocol (MCP) server, exposing VS Code's filesystem and editing capabilities to MCP clients.
 
@@ -137,16 +135,104 @@ The extension creates an MCP server that:
   - Quick reference for APIs or library functions
 
 ### Shell Tools
-- **execute_shell_command_code**: Executes a shell command in the VS Code integrated terminal with shell integration
-  - Parameters:
-    - `command`: The shell command to execute
-    - `cwd` (optional): Optional working directory for the command (default: '.')
 
+#### Command Execution
+- **execute_shell_command_code**: Executes a shell command in the VS Code integrated terminal with enhanced timeout handling
+- Parameters:
+  - `command`: The shell command to execute
+  - `cwd` (optional): Working directory for the command (default: '.')
+  - `shellId` (optional): ID of the shell to use (e.g., "shell-1"). If not provided, uses default shell or creates new one
+  - `interactive` (optional): Set to true for commands that might require user input (uses 45s timeout instead of 15s)
+  - `background` (optional): Set to true for long-running background processes (returns immediately)
+  - `silenceOutput` (optional): Set to true to suppress output display and save full output to file
+  
+  Key features:
+- **Automatic timeout reset**: Timeouts reset when new commands are executed in the same shell
+- **Default timeout**: 15 seconds for regular commands
+- **Interactive timeout**: 45 seconds for interactive commands
+- **Background mode**: No timeout for background processes
+- **Output limiting**: Truncates output over 100k characters and saves to file
+- **Safety warnings**: Detects potentially destructive commands
+  
   This tool is useful for:
-  - Running CLI commands and build operations
-  - Executing git commands
-  - Performing any shell operations that require terminal access
-  - Getting command output for analysis and further processing
+- Running CLI commands and build operations
+- Executing git commands
+- Interactive command sessions (npm create, git rebase -i, etc.)
+- Long-running processes (npm run dev, watch modes)
+- Getting command output for analysis
+
+#### Shell Management
+- **list_active_shells**: Lists all currently active shell sessions with timeout information
+  - No parameters required
+  
+  Displays:
+  - Shell ID and name
+  - Current status (idle, busy, waiting-for-input, crashed)
+  - Current directory
+  - Running command (if any)
+  - Creation time and last used time
+  - **Timeout status**: Shows remaining time and warnings for expiring timeouts
+  
+  Useful for:
+  - Managing multiple concurrent shells
+  - Monitoring shell status and timeouts
+  - Identifying shells that need attention
+
+- **send_input_to_shell**: Sends input to a specific shell that may be waiting for user input
+  - Parameters:
+    - `shellId`: ID of the shell to send input to (e.g., "shell-1")
+    - `input`: The input text to send to the shell
+    - `includeNewline` (optional): Whether to include a newline character (default: true)
+  
+  Key features:
+  - **Automatic timeout reset**: Resets timeout to 45 seconds when input is sent
+  - Useful for interactive prompts, password entries, confirmations
+  - Works with shells in 'waiting-for-input' or 'busy' status
+  
+  This tool is essential for:
+  - Responding to interactive prompts (y/n, continue?, etc.)
+  - Providing passwords or authentication
+  - Continuing paused processes
+  - Multi-step interactive workflows
+
+#### Workspace Context
+- **get_workspace_context**: Provides context about the current VS Code workspace
+  - No parameters required
+  
+  Returns:
+  - Current working directory
+  - VS Code workspace folders
+  - Basic project information (from package.json if available)
+  - Active shells summary
+  
+  Useful for:
+  - Understanding the project structure
+  - Getting workspace paths
+  - Quick project overview
+
+### Shell Timeout Behavior
+
+The shell tools implement an intelligent timeout system to prevent hanging commands while supporting interactive workflows:
+
+1. **Timeout Durations**:
+   - Regular commands: 15 seconds
+   - Interactive commands: 45 seconds  
+   - Background processes: No timeout
+
+2. **Timeout Reset**:
+   - Executing a new command in a shell clears any existing timeout
+   - Sending input via `send_input_to_shell` resets the timeout to 45 seconds
+   - This ensures long interactive sessions don't timeout prematurely
+
+3. **Timeout Visibility**:
+   - Use `list_active_shells` to see remaining timeout for each shell
+   - Shells with < 5 seconds remaining show a ⚠️ warning
+   - Helps identify shells that need attention
+
+4. **Shell Lifecycle**:
+   - Maximum 8 concurrent shells
+   - Shells auto-cleanup after 5 minutes of inactivity
+   - Crashed shells can be reused with the same ID
 
 ## Caveats/TODO
 
@@ -156,7 +242,7 @@ Currently, only one workspace is supported. The extension also only works locall
 
 This extension contributes the following settings:
 
-* `vscode-mcp-server.port`: The port number for the MCP server (default: 3000)
+- `vscode-mcp-server.port`: The port number for the MCP server (default: 3000)
 
 ## Using with MCP Clients
 
