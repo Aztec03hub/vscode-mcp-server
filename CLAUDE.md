@@ -113,6 +113,24 @@ interface DiffSection {
 }
 ```
 
+## Memory Entries
+
+### 2025-06-10: Shell Output File Path Reporting Improvement ✅
+**Task:** Improve shell output file path reporting to show full workspace-relative paths instead of just filenames.
+
+**Implementation:** Modified `src/tools/shell-tools.ts` to:
+1. Enhanced `saveOutputToFile()` function to return both file path and base directory metadata
+2. Updated `processCommandOutput()` function to format display paths as `<workspace_root>/.vscode-mcp-output/filename` or `<cwd>/.vscode-mcp-output/filename`
+3. Used existing `ensureOutputDirectory()` logic to determine workspace root vs fallback directory
+4. Added helper function `formatDisplayPath()` to consistently format paths for user display
+
+**Key Insight:** Leveraged existing workspace detection logic in `ensureOutputDirectory()` instead of recalculating, which maintains consistency with how output directory is actually created.
+
+**Status:** Code changes completed and compiled. May require VS Code extension reload to take effect.
+
+**Files Modified:**
+- `src/tools/shell-tools.ts`: Enhanced output path reporting throughout shell command execution
+
 ## Development Workflow Best Practices
 
 1. Always run tests after making changes to ensure nothing breaks

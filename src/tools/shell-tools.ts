@@ -594,22 +594,42 @@ async function ensureOutputDirectory(): Promise<string> {
 }
 
 /**
- * Saves command output to a file and returns the file path
+ * Saves command output to a file and returns both the file path and base directory info
  * @param shellId The shell ID for naming the file
  * @param output The command output to save
- * @returns The absolute path to the saved file
+ * @returns Object containing the absolute file path and base directory information
  */
-async function saveOutputToFile(shellId: string, output: string): Promise<string> {
+async function saveOutputToFile(shellId: string, output: string): Promise<{
+    filePath: string;
+    baseDirectory: string;
+    isWorkspaceRoot: boolean;
+    }> {
     const outputDirPath = await ensureOutputDirectory();
     const fileName = `${shellId}-output.txt`;
     const filePath = path.join(outputDirPath, fileName);
     const fileUri = vscode.Uri.file(filePath);
     
+    // Determine base directory and whether it's workspace root
+    let baseDirectory: string;
+    let isWorkspaceRoot: boolean;
+    
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        baseDirectory = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        isWorkspaceRoot = true;
+    } else {
+        baseDirectory = process.cwd();
+        isWorkspaceRoot = false;
+    }
+    
     try {
         // Write the output to the file (this will overwrite if exists)
         await vscode.workspace.fs.writeFile(fileUri, Buffer.from(output, 'utf8'));
         console.log(`[Shell Tools] Saved output to file: ${filePath} (${output.length} characters)`);
-        return filePath;
+        return {
+            filePath,
+            baseDirectory,
+            isWorkspaceRoot
+        };
     } catch (error) {
         console.error(`[Shell Tools] Error saving output to file:`, error);
         throw new Error(`Failed to save output to file: ${error instanceof Error ? error.message : String(error)}`);
@@ -640,43 +660,56 @@ async function cleanupOutputFile(shellId: string): Promise<void> {
  * @param output The raw command output
  * @param shellId The shell ID for file naming
  * @param silenceOutput Whether to suppress output display
- * @returns Processed output result with truncation info
+ * @returns Processed output result with truncation info and full path
  */
 async function processCommandOutput(
     output: string, 
     shellId: string, 
     silenceOutput: boolean = false
-): Promise<{ displayOutput: string; truncated: boolean; filePath?: string }> {
+): Promise<{ displayOutput: string; truncated: boolean; filePath?: string; fullDisplayPath?: string }> {
     const outputLength = output.length;
     let truncated = false;
     let filePath: string | undefined;
+    let fullDisplayPath: string | undefined;
     let displayOutput = output;
     
+    /**
+     * Helper function to format the display path for user-friendly output
+     */
+    const formatDisplayPath = (fileInfo: { filePath: string; baseDirectory: string; isWorkspaceRoot: boolean }): string => {
+        const relativePath = path.relative(fileInfo.baseDirectory, fileInfo.filePath);
+        const baseLabel = fileInfo.isWorkspaceRoot ? '<workspace_root>' : '<cwd>';
+        return `${baseLabel}${path.sep}${relativePath}`;
+    };
     
     // Check if output exceeds character limit
     if (outputLength > DEFAULT_OUTPUT_CHARACTER_LIMIT) {
         truncated = true;
         
         // Save full output to file
-        filePath = await saveOutputToFile(shellId, output);
+        const fileInfo = await saveOutputToFile(shellId, output);
+        filePath = fileInfo.filePath;
+        fullDisplayPath = formatDisplayPath(fileInfo);
         
         if (silenceOutput) {
             // For silence mode, return brief completion message
-            displayOutput = `Command completed, full output saved to file <${path.basename(filePath)}>`;
+            displayOutput = `Command completed, full output saved to file ${fullDisplayPath}`;
         } else {
             // For normal mode, show truncated output with file reference
             const truncatedOutput = output.substring(0, DEFAULT_OUTPUT_CHARACTER_LIMIT);
             displayOutput = `${truncatedOutput}\n\n**[OUTPUT TRUNCATED]**\n` +
                           `Output too long, truncated to ${DEFAULT_OUTPUT_CHARACTER_LIMIT.toLocaleString()} characters. ` +
-                          `Full output saved to file: ${path.basename(filePath)}`;
+                          `Full output saved to file: ${fullDisplayPath}`;
         }
     } else if (silenceOutput) {
         // For silence mode with short output, still save to file but don't show truncation message
-        filePath = await saveOutputToFile(shellId, output);
-        displayOutput = `Command completed, full output saved to file <${path.basename(filePath)}>`;
+        const fileInfo = await saveOutputToFile(shellId, output);
+        filePath = fileInfo.filePath;
+        fullDisplayPath = formatDisplayPath(fileInfo);
+        displayOutput = `Command completed, full output saved to file ${fullDisplayPath}`;
     }
     
-    return { displayOutput, truncated, filePath };
+    return { displayOutput, truncated, filePath, fullDisplayPath };
     }
 
 /**
@@ -1245,7 +1278,7 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                         outputInfo = silenceOutput ? 
                             ` Output saved to file.` : 
                             ` Output was truncated due to length (${output.length.toLocaleString()} characters).`;
-                    } else if (silenceOutput && outputResult.filePath) {
+                    } else if (silenceOutput && outputResult.fullDisplayPath) {
                         outputInfo = ` Output saved to file.`;
                     }
                 }
