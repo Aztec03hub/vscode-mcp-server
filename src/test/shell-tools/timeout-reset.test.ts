@@ -3,7 +3,6 @@ import * as vscode from 'vscode';
 import { 
     ShellTimeoutManager,
     DEFAULT_TIMEOUT_MS,
-    INTERACTIVE_TIMEOUT_MS
 } from '../../tools/shell-tools';
 
 /**
@@ -240,11 +239,8 @@ suite('Shell Timeout Reset Tests', () => {
     test('Timeout Constants Validation', () => {
         // Verify timeout constants are properly defined
         assert.strictEqual(DEFAULT_TIMEOUT_MS, 15000, 'Default timeout should be 15 seconds');
-        assert.strictEqual(INTERACTIVE_TIMEOUT_MS, 45000, 'Interactive timeout should be 45 seconds');
         
         // Verify constants are reasonable
         assert.ok(DEFAULT_TIMEOUT_MS > 0, 'Default timeout should be positive');
-        assert.ok(INTERACTIVE_TIMEOUT_MS > DEFAULT_TIMEOUT_MS, 'Interactive timeout should be longer than default');
-        assert.ok(INTERACTIVE_TIMEOUT_MS <= 60000, 'Interactive timeout should not exceed 1 minute');
     });
 });

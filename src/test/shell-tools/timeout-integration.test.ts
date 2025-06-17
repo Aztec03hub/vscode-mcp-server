@@ -4,7 +4,6 @@ import {
     executeShellCommand,
     ShellTimeoutManager,
     DEFAULT_TIMEOUT_MS,
-    INTERACTIVE_TIMEOUT_MS
 } from '../../tools/shell-tools';
 
 /**

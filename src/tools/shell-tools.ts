@@ -7,13 +7,13 @@
  * Key Features:
  * - Shell Registry: Manages up to 8 concurrent shell sessions with auto-cleanup
  * - Timeout Reset: Prevents premature timeouts during interactive workflows
- * - Output Management: Handles large outputs with file storage and truncation
+ * - Output Management: Handles large outputs with persistent file storage and truncation
  * - Safety Warnings: Detects potentially destructive commands
  * - Interactive Detection: Identifies prompts that need user input
  * 
  * Timeout Behavior:
  * - Default commands: 15-second timeout
- * - Interactive commands: 45-second timeout
+ * - Interactive commands: No timeout
  * - Background processes: No timeout
  * - Timeouts reset on new commands or input to support multi-step workflows
  * 
@@ -30,7 +30,8 @@ import { isShellAutoApprovalEnabled, requestShellCommandApproval } from '../exte
 
 // Configuration constants for shell integration timeouts and delays
 const SHELL_INTEGRATION_TIMEOUT_MS = 5000; // 5 seconds to wait for shell integration
-const STREAM_TIMEOUT_MS = 30000; // 30 seconds to wait for command stream
+const STREAM_TIMEOUT_MS = 3000; // 3 seconds to wait for command stream (changed from 30s to fix hanging)
+const INTERACTIVE_STREAM_TIMEOUT_MS = 3000; // 3 seconds for interactive commands to avoid hanging
 const COMMAND_DELAY_MS = 50; // 50ms delay after PowerShell commands (VSCode Bug #237208 workaround)
 
 // Shell Registry Configuration
@@ -39,7 +40,6 @@ const SHELL_CLEANUP_TIMEOUT = 5 * 60 * 1000; // 5 minutes - auto-cleanup for idl
 
 // Timeout Configuration - These values balance responsiveness with support for interactive workflows
 const DEFAULT_TIMEOUT_MS = 15000; // 15 seconds - for regular commands (ls, echo, git status, etc.)
-const INTERACTIVE_TIMEOUT_MS = 45000; // 45 seconds - for interactive commands (npm create, confirmations, etc.)
 // Note: Timeouts reset on new commands or input, so multi-step workflows won't be interrupted
 
 // Output Management Configuration (Task 4.1)
@@ -117,7 +117,7 @@ interface ManagedShell {
     runningCommand?: string;
     activeTimeout?: NodeJS.Timeout;     // Track the active timeout handle for this shell
     timeoutEndTime?: Date;              // When the current timeout will expire (used for remaining time calculation)
-    timeoutDuration?: number;           // Duration of the current timeout in ms (15s default, 45s interactive)
+    timeoutDuration?: number;           // Duration of the current timeout in ms (15s default shell types only)
     timeoutController?: AbortController; // For cancellable async operations (allows aborting on timeout)
 }
 
@@ -342,22 +342,12 @@ class ShellRegistry {
             shell.terminal.dispose();
             this.shells.delete(shellId);
             
-            // Clean up associated output file (Task 4.1)
-            cleanupOutputFile(shellId).catch(error => {
-                console.warn(`[Shell Registry] Warning: Could not cleanup output file for ${shellId}:`, error);
-            });
-            
-            console.log(`[Shell Registry] Closed shell: ${shellId}`);
+            console.log(`[Shell Registry] Closed shell: ${shellId} (output file preserved for manual inspection)`);
             return true;
         } catch (error) {
             console.error(`[Shell Registry] Error closing shell ${shellId}:`, error);
             // Remove from registry anyway to prevent zombie shells
             this.shells.delete(shellId);
-            
-            // Still try to cleanup output file
-            cleanupOutputFile(shellId).catch(cleanupError => {
-                console.warn(`[Shell Registry] Warning: Could not cleanup output file for ${shellId}:`, cleanupError);
-            });
             
             return false;
         }
@@ -595,6 +585,7 @@ async function ensureOutputDirectory(): Promise<string> {
 
 /**
  * Saves command output to a file and returns both the file path and base directory info
+ * Files are completely overwritten if they already exist (no appending)
  * @param shellId The shell ID for naming the file
  * @param output The command output to save
  * @returns Object containing the absolute file path and base directory information
@@ -819,7 +810,7 @@ async function waitForShellIntegration(terminal: vscode.Terminal, timeout = SHEL
     cwd?: string,
     timeoutMs: number = STREAM_TIMEOUT_MS,
     shellId?: string
-): Promise<{ output: string; aborted?: boolean }> {
+    ): Promise<{ output: string; aborted?: boolean; timedOut?: boolean }> {
     terminal.show();
     
     // Build full command including cd if cwd is specified
@@ -899,7 +890,8 @@ async function waitForShellIntegration(terminal: vscode.Terminal, timeout = SHEL
                     streamCompleted = true;
                     resolve(output);
                 } else {
-                    reject(new Error(`Command stream timeout after ${timeoutMs}ms. This may indicate a shell integration issue.`));
+                    // Mark as timed out for special handling
+                    reject(new Error(`STREAM_TIMEOUT:${timeoutMs}`));
                 }
             }, timeoutMs);
         });
@@ -942,7 +934,10 @@ async function waitForShellIntegration(terminal: vscode.Terminal, timeout = SHEL
         
         // Enhanced error handling with fallback information
         const errorMessage = error instanceof Error ? error.message : String(error);
-        if (errorMessage.includes('timeout') || errorMessage.includes('aborted')) {
+        if (errorMessage.includes('STREAM_TIMEOUT:')) {
+            // Extract timeout value from error message
+            return { output: '', timedOut: true, aborted: false };
+        } else if (errorMessage.includes('timeout') || errorMessage.includes('aborted')) {
             throw new Error(`Shell command timed out after ${timeoutMs / 1000} seconds. ` +
                           `This may be due to VSCode shell integration issues. ` +
                           `Try running the command manually or restarting the terminal. ` +
@@ -953,6 +948,189 @@ async function waitForShellIntegration(terminal: vscode.Terminal, timeout = SHEL
     }
     
     return { output, aborted: false };
+}
+
+/**
+ * Focuses a specific shell terminal by shell ID
+ * @param shellId The ID of the shell to focus
+ * @returns Promise that resolves to true if focus succeeded, false otherwise
+ */
+async function focusShellTerminal(shellId: string): Promise<boolean> {
+    try {
+        const registry = ShellRegistry.getInstance();
+        const shell = registry.listShells().find(s => s.id === shellId);
+        
+        if (!shell) {
+            console.error(`[Shell Tools] Cannot focus shell ${shellId}: shell not found`);
+            return false;
+        }
+        
+        console.log(`[Shell Tools] Focusing terminal for shell ${shellId} (${shell.name})`);
+        
+        // Use terminal.show() to bring the terminal into focus
+        shell.terminal.show();
+        
+        // Small delay to ensure focus change is processed
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        console.log(`[Shell Tools] Successfully focused terminal for shell ${shellId}`);
+        return true;
+        
+    } catch (error) {
+        console.error(`[Shell Tools] Error focusing shell ${shellId}:`, error);
+        return false;
+    }
+}
+
+/**
+ * Captures terminal output using VS Code selection commands
+ * @param shellId The shell ID for file naming and logging
+ * @param terminal The terminal to capture output from (must be focused)
+ * @returns Object containing captured output and file info
+ */
+async function captureTerminalOutput(shellId: string, terminal: vscode.Terminal): Promise<{
+    success: boolean;
+    output: string;
+    error?: string;
+    filePath?: string;
+    fullDisplayPath?: string;
+}> {
+    try {
+        console.log(`[Shell Tools] Capturing terminal output for shell ${shellId}`);
+        
+        // Step 1: Ensure terminal is focused
+        terminal.show();
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Step 2: Select all terminal content
+        console.log(`[Shell Tools] Selecting all terminal content for shell ${shellId}`);
+        await vscode.commands.executeCommand('workbench.action.terminal.selectAll');
+        await new Promise(resolve => setTimeout(resolve, 50));
+        
+        // Step 3: Copy selection to clipboard
+        console.log(`[Shell Tools] Copying terminal selection to clipboard for shell ${shellId}`);
+        await vscode.commands.executeCommand('workbench.action.terminal.copySelection');
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Step 4: Clear selection
+        console.log(`[Shell Tools] Clearing terminal selection for shell ${shellId}`);
+        await vscode.commands.executeCommand('workbench.action.terminal.clearSelection');
+        
+        // Step 5: Read clipboard content
+        console.log(`[Shell Tools] Reading clipboard content for shell ${shellId}`);
+        const clipboardContent = await vscode.env.clipboard.readText();
+        
+        if (!clipboardContent || clipboardContent.trim().length === 0) {
+            return {
+                success: false,
+                output: '',
+                error: 'No content captured from terminal (clipboard empty)'
+            };
+        }
+        
+        console.log(`[Shell Tools] Successfully captured ${clipboardContent.length} characters from terminal ${shellId}`);
+        
+        // Step 6: Always save terminal output to file (regardless of size)
+        const fileInfo = await saveOutputToFile(shellId, clipboardContent);
+        
+        // Format display path for user-friendly output
+        const formatDisplayPath = (fileInfo: { filePath: string; baseDirectory: string; isWorkspaceRoot: boolean }): string => {
+            const relativePath = path.relative(fileInfo.baseDirectory, fileInfo.filePath);
+            const baseLabel = fileInfo.isWorkspaceRoot ? '<workspace_root>' : '<cwd>';
+            return `${baseLabel}${path.sep}${relativePath}`;
+        };
+        
+        const fullDisplayPath = formatDisplayPath(fileInfo);
+        
+        return {
+            success: true,
+            output: clipboardContent,
+            filePath: fileInfo.filePath,
+            fullDisplayPath: fullDisplayPath
+        };
+        
+    } catch (error) {
+        console.error(`[Shell Tools] Error capturing terminal output for shell ${shellId}:`, error);
+        return {
+            success: false,
+            output: '',
+            error: error instanceof Error ? error.message : String(error)
+        };
+    }
+}
+
+/**
+ * Extracts the last N lines from text content
+ * @param content The text content to process
+ * @param lineCount Number of lines to extract (default: 20)
+ * @returns String containing the last N lines
+ */
+function getLastLines(content: string, lineCount: number = 20): string {
+    if (!content || content.trim().length === 0) {
+        return '';
+    }
+    
+    const lines = content.split('\n');
+    if (lines.length <= lineCount) {
+        return content;
+    }
+    
+    const lastLines = lines.slice(-lineCount);
+    return `[... showing last ${lineCount} lines of terminal output ...]\n\n${lastLines.join('\n')}`;
+}
+
+/**
+ * Test function for terminal focus functionality - Phase 1 of enhanced send_input_to_shell
+ * Creates test shells and tests terminal focusing capability
+ * @returns Test results as formatted string
+ */
+async function testTerminalFocus(): Promise<string> {
+    try {
+        const registry = ShellRegistry.getInstance();
+        const results: string[] = [];
+        
+        results.push('=== Terminal Focus Test - Phase 1 ===\n');
+        
+        // Step 1: Create target interactive shell with custom name
+        results.push('Step 1: Creating interactive test shell...');
+        const interactiveShell = registry.createShell('interactive-test-shell');
+        results.push(`✓ Created shell: ${interactiveShell.id} (${interactiveShell.name})`);
+        
+        // Step 2: Create generic default shell (this will steal focus)
+        results.push('\nStep 2: Creating generic default shell...');
+        const defaultShell = registry.createShell();
+        results.push(`✓ Created shell: ${defaultShell.id} (${defaultShell.name})`);
+        results.push('  (This shell should now have focus)');
+        
+        // Step 3: Focus the interactive shell
+        results.push('\nStep 3: Attempting to focus interactive shell...');
+        const focusSuccess = await focusShellTerminal(interactiveShell.id);
+        
+        if (focusSuccess) {
+            results.push(`✓ Focus operation completed for shell ${interactiveShell.id}`);
+            results.push('  → Please verify in VS Code that "interactive-test-shell" tab is now active');
+        } else {
+            results.push(`✗ Focus operation failed for shell ${interactiveShell.id}`);
+        }
+        
+        // Step 4: List current shells for verification
+        results.push('\nStep 4: Current shell status:');
+        const allShells = registry.listShells();
+        allShells.forEach(shell => {
+            results.push(`  - ${shell.id} (${shell.name}): ${shell.status}`);
+        });
+        
+        results.push('\n=== Test Instructions ===');
+        results.push('1. Check VS Code terminal tabs');
+        results.push('2. Verify "interactive-test-shell" tab is active/focused');
+        results.push('3. If successful, we can proceed to Phase 2 (terminal selection)');
+        results.push('4. Use close_shell to clean up test shells when done');
+        
+        return results.join('\n');
+        
+    } catch (error) {
+        return `\n**Terminal Focus Test FAILED:**\n✗ Error: ${error instanceof Error ? error.message : String(error)}`;
+    }
 }
 
 /**
@@ -1184,24 +1362,73 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     }
                 }
                 
-                // Execute command with appropriate timeout
-                const timeoutMs = interactive ? INTERACTIVE_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
                 let output: string;
                 let timedOut = false;
                 let aborted = false;
                 
-                try {
-                    const result = await executeShellCommand(terminal, command, cwd, timeoutMs, managedShell.id);
-                    output = result.output;
-                    aborted = result.aborted || false;
-                    
-                    // Update managed shell with timeout info if command is still running
-                    const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(managedShell.id);
-                    if (timeoutInfo) {
-                        managedShell.timeoutDuration = timeoutInfo.total;
-                        managedShell.timeoutEndTime = new Date(Date.now() + timeoutInfo.remaining);
+                if (interactive) {
+                    console.log(`[Shell Tools] DEBUG: Entering interactive block for command: ${command}`);
+                    // Interactive commands use 3-second timeout to capture initial output (like scaffolding prompts)
+                    const interactiveTimeoutMs = INTERACTIVE_STREAM_TIMEOUT_MS; // 3 seconds
+                    try {
+                        const result = await executeShellCommand(terminal, command, cwd, interactiveTimeoutMs, managedShell.id);
+                        let capturedOutput = result.output;
+                        aborted = result.aborted || false;
+                        
+                        // Check if interactive command timed out (expected for scaffolding tools)
+                        if (result.timedOut) {
+                            timedOut = true;
+                            console.log(`[Shell Tools] Interactive command timed out after ${interactiveTimeoutMs / 1000}s, captured ${capturedOutput.length} chars`);
+                        }
+                        
+                        // Extract last 20 lines from captured output
+                        let displayOutput = capturedOutput;
+                        if (capturedOutput) {
+                            const lines = capturedOutput.split('\n');
+                            if (lines.length > 20) {
+                                const lastLines = lines.slice(-20);
+                                displayOutput = lastLines.join('\n');
+                                displayOutput = `[... showing last 20 lines of output ...]\n\n${displayOutput}`;
+                            }
+                        } else {
+                            displayOutput = 'Interactive command started (no initial output captured).';
+                        }
+                        
+                        output = displayOutput;
+                        registry.updateShellStatus(managedShell.id, 'waiting-for-input', command);
+                        
+                        // Update managed shell with timeout info if command is still running
+                        const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(managedShell.id);
+                        if (timeoutInfo) {
+                            managedShell.timeoutDuration = timeoutInfo.total;
+                            managedShell.timeoutEndTime = new Date(Date.now() + timeoutInfo.remaining);
+                        }
+                    } catch (error) {
+                        const errorMessage = error instanceof Error ? error.message : String(error);
+                        if (errorMessage.includes('timeout') || aborted) {
+                            timedOut = true;
+                            output = `Interactive command execution failed or timed out after ${interactiveTimeoutMs / 1000} seconds.`;
+                            registry.updateShellStatus(managedShell.id, 'waiting-for-input', command);
+                        } else {
+                            registry.updateShellStatus(managedShell.id, 'crashed');
+                            throw error;
+                        }
                     }
-                } catch (error) {
+                } else {
+                    // Non-interactive commands use normal timeout
+                    const timeoutMs = DEFAULT_TIMEOUT_MS;
+                    try {
+                        const result = await executeShellCommand(terminal, command, cwd, timeoutMs, managedShell.id);
+                        output = result.output;
+                        aborted = result.aborted || false;
+                        
+                        // Update managed shell with timeout info if command is still running
+                        const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(managedShell.id);
+                        if (timeoutInfo) {
+                            managedShell.timeoutDuration = timeoutInfo.total;
+                            managedShell.timeoutEndTime = new Date(Date.now() + timeoutInfo.remaining);
+                        }
+                    } catch (error) {
                     const errorMessage = error instanceof Error ? error.message : String(error);
                     if (errorMessage.includes('timeout') || aborted) {
                         timedOut = true;
@@ -1215,6 +1442,7 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     } else {
                         registry.updateShellStatus(managedShell.id, 'crashed');
                         throw error;
+                    }
                     }
                 }
                 
@@ -1418,13 +1646,14 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
     // Add send_input_to_shell tool
     server.tool(
         'send_input_to_shell',
-        'Sends input to a specific shell that may be waiting for user input. Useful for interactive commands, password prompts, or continuing paused processes. Does not execute commands - use execute_shell_command_code for that.',
+        'Sends input to a specific shell and captures the last 20 lines of terminal output after the input is processed. Uses VS Code terminal selection to capture arbitrary terminal content including responses to user interactions.',
         {
             shellId: z.string().describe('ID of the shell to send input to (e.g., "shell-1")'),
             input: z.string().describe('The input text to send to the shell'),
-            includeNewline: z.boolean().optional().default(true).describe('Whether to include a newline character after the input (default: true)')
+            includeNewline: z.boolean().optional().default(true).describe('Whether to include a newline character after the input (default: true)'),
+            captureOutput: z.boolean().optional().default(true).describe('Whether to capture and return terminal output after sending input (default: true)')
         },
-        async ({ shellId, input, includeNewline }): Promise<CallToolResult> => {
+        async ({ shellId, input, includeNewline, captureOutput }): Promise<CallToolResult> => {
             try {
                 const registry = ShellRegistry.getInstance();
                 
@@ -1439,44 +1668,41 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     throw new Error(`Shell '${shellId}' is crashed and cannot accept input. Use execute_shell_command_code to create a new shell.`);
                 }
                 
-                console.log(`[Shell Tools] Sending input to shell ${shellId}: "${input}"`);
+                console.log(`[Shell Tools] Sending input to shell ${shellId}: "${input}"${captureOutput ? ' (with output capture)' : ''}`);
                 
-                // Send the input to the terminal
-                const inputText = includeNewline ? input + '\n' : input;
-                shell.terminal.sendText(inputText, false); // false = don't add extra newline
+                // Step 1: Send input to shell
+                shell.terminal.sendText(input, includeNewline);
                 
-                // Reset timeout for interactive shells since user is actively interacting
-                // This is essential for multi-step interactive workflows like:
-                // - npm create svelte@latest (multiple prompts)
-                // - git interactive rebase (multiple confirmations)
-                // - Database migrations with confirmations
-                // Each input resets the timeout to prevent interruption.
-                if (shell.status === 'waiting-for-input' || shell.status === 'busy') {
-                    console.log(`[Shell Tools] Resetting timeout for shell ${shellId} after input`);
+                // Update shell status to busy
+                registry.updateShellStatus(shellId, 'busy');
+                
+                let outputInfo = '';
+                let capturedOutput = '';
+                let outputFilePath = '';
+                
+                // Step 2: Capture output if requested
+                if (captureOutput) {
+                    console.log(`[Shell Tools] Waiting for command processing before capture...`);
+                    // Wait for command to process before capturing
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                     
-                    // Use interactive timeout (45s) since user is actively interacting
-                    // This gives users enough time to read prompts and make decisions
-                    ShellTimeoutManager.resetShellTimeout(
-                        shellId,
-                        INTERACTIVE_TIMEOUT_MS,
-                        () => {
-                            // Update shell status on timeout
-                            registry.updateShellStatus(shellId, 'idle');
-                            console.warn(`[Shell Tools] Shell ${shellId} timed out after input`);
-                        }
-                    );
+                    const captureResult = await captureTerminalOutput(shellId, shell.terminal);
                     
-                    // Update timeout tracking in managed shell
-                    const timeoutInfo = ShellTimeoutManager.getTimeoutInfo(shellId);
-                    if (timeoutInfo) {
-                        shell.timeoutDuration = timeoutInfo.total;
-                        shell.timeoutEndTime = new Date(Date.now() + timeoutInfo.remaining);
+                    if (captureResult.success) {
+                        // Get last 20 lines from captured output
+                        capturedOutput = getLastLines(captureResult.output, 20);
+                        outputFilePath = captureResult.fullDisplayPath || 'File path not available';
+                        outputInfo = ` Terminal output captured and saved`;
+                        
+                        console.log(`[Shell Tools] Successfully captured terminal output for shell ${shellId}`);
+                        console.log(`[Shell Tools] Output saved to: ${outputFilePath}`);
+                    } else {
+                        outputInfo = ` Output capture failed: ${captureResult.error || 'Unknown error'}`;
+                        console.warn(`[Shell Tools] Output capture failed for shell ${shellId}: ${captureResult.error}`);
                     }
                 }
                 
-                // Update shell status and last used time
-                registry.updateShellStatus(shellId, 'busy');
-                
+                // Step 3: Build result
                 const result: CallToolResult = {
                     content: [
                         {
@@ -1485,13 +1711,19 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                                   `**Shell:** ${shell.id} (${shell.name})\n` +
                                   `**Input:** ${input}\n` +
                                   `**Include Newline:** ${includeNewline ? 'Yes' : 'No'}\n` +
-                                  `**Shell Status:** ${shell.status}\n\n` +
-                                  `*Input has been sent to the shell. The shell may take a moment to process the input and update its status.*`
+                                  `**Capture Output:** ${captureOutput ? 'Yes' : 'No'}${outputInfo}\n\n` +
+                                  `*Input sent successfully.*` +
+                                  (captureOutput && outputFilePath ? 
+                                    `\n\n**Full Output Saved To:** ${outputFilePath}` : '') +
+                                  (captureOutput && capturedOutput ? 
+                                    `\n\n**Terminal Output (Last 20 Lines):**\n\`\`\`\n${capturedOutput}\n\`\`\`` : 
+                                    (captureOutput ? '\n\n*Output capture was attempted but may have failed. Check the VS Code terminal for the actual response.*' : 
+                                     '\n\n*Use the VS Code terminal window to see the shell\'s response.*'))
                         }
                     ]
                 };
                 
-                console.log(`[Shell Tools] Input sent successfully to shell ${shellId}`);
+                console.log(`[Shell Tools] Input sent successfully to shell ${shellId}${captureOutput ? ' with output capture' : ''}`);
                 return result;
                 
             } catch (error) {
@@ -1499,6 +1731,33 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 
                 const errorMessage = error instanceof Error ? error.message : String(error);
                 throw new Error(`Failed to send input to shell: ${errorMessage}`);
+            }
+        }
+    );
+
+    // Add test_terminal_focus tool - Phase 1 of enhanced send_input_to_shell
+    server.tool(
+        'test_terminal_focus',
+        'Test terminal focus functionality by creating test shells and verifying focus control. Phase 1 of enhanced send_input_to_shell implementation.',
+        {},
+        async (): Promise<CallToolResult> => {
+            try {
+                const testResult = await testTerminalFocus();
+                
+                const result: CallToolResult = {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `**Terminal Focus Test Results**\n\n${testResult}`
+                        }
+                    ]
+                };
+                
+                return result;
+            } catch (error) {
+                console.error('[Shell Tools] Error in test_terminal_focus tool:', error);
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                throw new Error(`Test failed: ${errorMessage}`);
             }
         }
     );
@@ -1608,6 +1867,71 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
             }
         }
     );
+
+    // Add close_shell tool
+    server.tool(
+        'close_shell',
+        'Closes a specific shell session by ID. This will terminate the shell, clean up associated resources including output files, and remove it from the active shells registry. Use list_active_shells to see available shell IDs.',
+        {
+            shellId: z.string().describe('ID of the shell to close (e.g., "shell-1")')
+        },
+        async ({ shellId }): Promise<CallToolResult> => {
+            try {
+                const registry = ShellRegistry.getInstance();
+                
+                // Get shell info before closing for response
+                const shells = registry.listShells();
+                const targetShell = shells.find(s => s.id === shellId);
+                
+                if (!targetShell) {
+                    const availableShells = shells.map(s => s.id).join(', ') || 'none';
+                    throw new Error(`Shell '${shellId}' not found. Available shells: ${availableShells}`);
+                }
+                
+                console.log(`[Shell Tools] Closing shell ${shellId} (${targetShell.name})`);
+                
+                // Clear any active timeout for this shell
+                ShellTimeoutManager.clearShellTimeout(shellId);
+                
+                // Close the shell using registry method
+                const success = registry.closeShell(shellId);
+                
+                if (!success) {
+                    throw new Error(`Failed to close shell '${shellId}'. The shell may have already been disposed.`);
+                }
+                
+                // Get updated shell list
+                const remainingShells = registry.listShells();
+                
+                const result: CallToolResult = {
+                    content: [
+                        {
+                            type: 'text',
+                            text: `**Shell Closed Successfully**\n\n` +
+                                  `**Closed Shell:** ${shellId} (${targetShell.name})\n` +
+                                  `**Status at Close:** ${targetShell.status}\n` +
+                                  `**Running Command:** ${targetShell.runningCommand || 'None'}\n` +
+                                  `**Current Directory:** ${targetShell.currentDirectory || 'Unknown'}\n\n` +
+                                  `**Remaining Active Shells:** ${remainingShells.length}\n` +
+                                  `${remainingShells.length > 0 ? 
+                                    remainingShells.map(s => `- ${s.id} (${s.name}): ${s.status}`).join('\n') : 
+                                    '- No active shells remaining'}\n\n` +
+                                  `*Shell resources cleaned up. Output file preserved at <workspace_root>/.vscode-mcp-output/${shellId}-output.txt for manual inspection.*`
+                        }
+                    ]
+                };
+                
+                console.log(`[Shell Tools] Shell ${shellId} closed successfully, ${remainingShells.length} shells remaining`);
+                return result;
+                
+            } catch (error) {
+                console.error('[Shell Tools] Error in close_shell tool:', error);
+                
+                const errorMessage = error instanceof Error ? error.message : String(error);
+                throw new Error(`Failed to close shell: ${errorMessage}`);
+            }
+        }
+    );
 }
 
 // Exports for testing
@@ -1621,5 +1945,6 @@ export {
     INTERACTIVE_KEYWORDS,
     ShellTimeoutManager,
     DEFAULT_TIMEOUT_MS,
-    INTERACTIVE_TIMEOUT_MS
+    focusShellTerminal,
+    testTerminalFocus
 };

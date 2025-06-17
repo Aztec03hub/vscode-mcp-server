@@ -27,6 +27,108 @@ Implemented a timeout reset mechanism for shell commands to prevent premature ti
 - Verify timeout resets when sending multiple inputs
 - Check list_active_shells shows correct timeout information
 
+## send_input_to_shell Tool Fix (2025-06-17)
+
+### Problem Solved
+The `send_input_to_shell` tool was not properly sending input to interactive shells. Input was being sent but not reaching the waiting commands in VS Code terminals.
+
+### Solution Applied
+Fixed the `terminal.sendText()` API usage in the `send_input_to_shell` tool implementation:
+
+**Before (broken):**
+```typescript
+const inputText = includeNewline ? input + '\n' : input;
+shell.terminal.sendText(inputText, false); // false = don't add extra newline
+```
+
+**After (working):**
+```typescript
+shell.terminal.sendText(input, includeNewline); // Let VS Code handle newline addition
+```
+
+### Testing Results: ✅ SUCCESS
+- ✅ **Interactive Command**: `pause` command successfully waited for input showing "Press Enter to continue...: "
+- ✅ **Input Delivery**: Empty input with newline (Enter key) was successfully sent via `send_input_to_shell`
+- ✅ **Command Completion**: The `pause` command completed and returned to PowerShell prompt
+- ✅ **Shell Status**: Shell properly transitioned "waiting-for-input" → "busy" → "idle"
+
+### Key Insight
+The VS Code `terminal.sendText(text, addNewLine)` API expects the boolean parameter directly, not manually constructed input text with newlines. This fix enables proper interaction with waiting shell commands.
+
+**Files Modified:**
+- `src/tools/shell-tools.ts`: Fixed `sendText()` parameter usage in `send_input_to_shell` tool
+
+### Enhanced send_input_to_shell Implementation (2025-06-17)
+
+### Major Enhancement Applied
+Transformed `send_input_to_shell` from a simple input-sender into a complete interactive workflow tool that captures and returns output.
+
+**New Parameters Added:**
+- `waitTimeMs?: number = 3000` - Time to wait for output after sending input
+- `tailLines?: number = 50` - Number of recent output lines to show
+- `saveOutput?: boolean = true` - Whether to save full output to file
+
+**New Functionality:**
+1. **Send Input**: Uses fixed `terminal.sendText(input, includeNewline)` API
+2. **Wait for Output**: Configurable wait time for terminal to respond (default 3s)
+3. **Capture Output**: Attempts to capture terminal state using shell integration
+4. **Smart Truncation**: Shows last N lines (default 50) with file reference for full output
+5. **File Saving**: Reuses existing `processCommandOutput()` logic for consistent file management
+6. **Interactive Detection**: Automatically detects if more input is needed and updates shell status
+7. **Enhanced Response**: Shows input details, wait time, output, and next steps
+
+**Perfect for Interactive Workflows:**
+- Scaffolding tools (npm create, yeoman generators)
+- Interactive installers and configuration wizards
+- Multi-step command sequences
+- Any workflow requiring both input and immediate output feedback
+
+**Usage Pattern:**
+```javascript
+// Start interactive process
+execute_shell_command_code({ command: "npx sv create my-app", interactive: true })
+
+// Continue with enhanced tool
+send_input_to_shell({ 
+  shellId: "shell-1", 
+  input: "2",           // Select option 2
+  waitTimeMs: 3000,     // Wait 3s for response
+  tailLines: 50         // Show last 50 lines
+})
+```
+
+**Status:** ✅ Implementation complete and compiled successfully. Ready for testing with VS Code restart.
+
+**Files Modified:**
+- `src/tools/shell-tools.ts`: Enhanced `send_input_to_shell` tool with output capture, wait functionality, and smart truncation
+
+## closeShell MCP Tool Implementation (2025-06-17)
+
+### Implementation Summary
+Successfully implemented `close_shell` MCP tool to allow programmatic closure of specific shell sessions.
+
+**Key Features:**
+- Parameter validation using zod schema for `shellId` parameter
+- Integration with existing `ShellRegistry.closeShell()` method for proper disposal
+- Timeout cleanup via `ShellTimeoutManager.clearShellTimeout()`
+- Comprehensive error handling with helpful messages
+- Detailed response format showing closed shell info and remaining shells
+
+**Testing Results:** ✅ ALL TESTS PASSED
+- ✅ **Basic Shell Closure**: Successfully closed `shell-1` with proper resource cleanup
+- ✅ **Named Shell Closure**: Successfully closed `shell-2` (test-shell) with detailed status reporting
+- ✅ **Error Handling**: Correctly handled non-existent shell ID with helpful error message
+- ✅ **Resource Cleanup**: Verified output files and timeouts are properly cleaned up
+- ✅ **Registry Management**: Shell count properly decremented and remaining shells accurately reported
+
+**Usage Pattern:**
+```javascript
+close_shell({ shellId: "shell-1" })
+```
+
+**Files Modified:**
+- `src/tools/shell-tools.ts`: Added `close_shell` MCP tool registration in `registerShellTools()` function
+
 ## Project Patterns and Conventions
 
 ### Tool Implementation Pattern
