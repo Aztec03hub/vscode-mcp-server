@@ -67,7 +67,7 @@ export async function listWorkspaceFiles(workspacePath: string, recursive: boole
  * Reads a file from the VS Code workspace with character limit check
  * @param workspacePath The path within the workspace to the file
  * @param encoding Optional encoding to convert the file content to a string
- * @param maxCharacters Maximum character count (default: 100,000)
+ * @param maxCharacters Maximum character count (default: 200,000)
  * @param startLine The start line number (0-based, inclusive). Use -1 to read from the beginning.
  * @param endLine The end line number (0-based, inclusive). Use -1 to read to the end.
  * @returns File content as Uint8Array or string if encoding is provided
@@ -102,12 +102,7 @@ export async function readWorkspaceFile(
             const textDecoder = new TextDecoder(encoding);
             const textContent = textDecoder.decode(fileContent);
             
-            // Check if the character count exceeds the limit
-            if (textContent.length > maxCharacters) {
-                throw new Error(`File content exceeds the maximum character limit (${textContent.length} vs ${maxCharacters} allowed)`);
-            }
-            
-            // If line numbers are specified and valid, extract just those lines
+            // If line numbers are specified and valid, extract just those lines BEFORE checking character limit
             if (startLine >= 0 || endLine >= 0) {
                 // Split the content into lines
                 const lines = textContent.split('\n');
@@ -128,8 +123,19 @@ export async function readWorkspaceFile(
                 
                 // Extract the requested lines and join them back together
                 const partialContent = lines.slice(effectiveStartLine, effectiveEndLine + 1).join('\n');
+                
+                // Check if the FILTERED content exceeds the limit
+                if (partialContent.length > maxCharacters) {
+                    throw new Error(`Filtered content exceeds the maximum character limit (${partialContent.length} vs ${maxCharacters} allowed)`);
+                }
+                
                 console.log(`[readWorkspaceFile] Returning lines ${effectiveStartLine}-${effectiveEndLine}, length: ${partialContent.length} characters`);
                 return partialContent;
+            }
+            
+            // For full file reads (no line filtering), check the full content against the limit
+            if (textContent.length > maxCharacters) {
+                throw new Error(`File content exceeds the maximum character limit (${textContent.length} vs ${maxCharacters} allowed)`);
             }
             
             return textContent;

@@ -36,7 +36,7 @@ const COMMAND_DELAY_MS = 50; // 50ms delay after PowerShell commands (VSCode Bug
 
 // Shell Registry Configuration
 const MAX_SHELLS = 8; // Maximum number of concurrent shells to prevent resource exhaustion
-const SHELL_CLEANUP_TIMEOUT = 5 * 60 * 1000; // 5 minutes - auto-cleanup for idle shells to free resources
+const SHELL_CLEANUP_TIMEOUT = 10 * 60 * 1000; // 10 minutes - auto-cleanup for idle shells to free resources
 
 // Timeout Configuration - These values balance responsiveness with support for interactive workflows
 const DEFAULT_TIMEOUT_MS = 15000; // 15 seconds - for regular commands (ls, echo, git status, etc.)

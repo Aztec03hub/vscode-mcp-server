@@ -377,6 +377,38 @@ send_input_to_shell({
 **Files Modified:**
 * `src/tools/shell-tools.ts`: Added terminal output capture functions and enhanced send_input_to_shell
 
+### 2025-09-05: Fix read_file_code Line Filtering for Large Files ✅
+**Task:** Fix `read_file_code` tool not respecting `startLine` and `endLine` parameters for files over 200,000 characters.
+
+**Root Cause:** The function was checking character limit on the FULL file content before applying line filtering, causing it to fail for large files even when requesting only a small portion.
+
+**Implementation:** Modified `readWorkspaceFile` function in `src/tools/file-tools.ts`:
+1. **Restructured logic flow**: When line parameters are provided, apply line filtering FIRST
+2. **Character limit check order**: Check limit on FILTERED content only when using line parameters
+3. **Preserved backward compatibility**: Full file reads still check limit on complete content
+
+**Key Changes:**
+* Moved line filtering logic before character limit check when `startLine` or `endLine` are provided
+* Split character limit checking into two paths:
+  - Line-filtered reads: Check limit on extracted lines only
+  - Full file reads: Check limit on complete content (original behavior)
+
+**Testing:** 
+* Created `test_longfile.md` with 221,611 characters for testing
+* Before fix: `read_file_code` with lines 0-100 failed with "exceeds limit" error
+* After fix: Successfully reads requested lines from large files
+* Edge cases validated: Binary files, boundary conditions, full file reads
+
+**Benefits:**
+* Can now read specific sections of large files (logs, data files, etc.)
+* Maintains safety limit to prevent memory issues
+* No breaking changes to existing functionality
+
+**Status:** Code changes completed, compiled, and linted successfully. Requires VS Code restart to take effect.
+
+**Files Modified:**
+* `src/tools/file-tools.ts`: Restructured character limit checking in `readWorkspaceFile` function
+
 ### 2025-06-17: CRITICAL VS Code Extension Development Workflow ⚠️🔴
 **CRITICAL REQUIREMENT:** VS Code extensions ALWAYS require complete rebuild/reinstall/restart cycle after code changes.
 

@@ -47,8 +47,8 @@ cd shell-tools-manual-tests
    ```
 
 2. **Expected Results**:
-   - Output should be truncated at 100,000 characters
-   - Message: "Output too long, truncated to 100,000 characters"
+   - Output should be truncated at 200,000 characters
+   - Message: "Output too long, truncated to 200,000 characters"
    - File reference: "Full output saved to file: shell-X-output.txt"
    - `.vscode-mcp-output/` directory should be created
    - Output file should contain full output

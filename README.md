@@ -76,7 +76,7 @@ The extension creates an MCP server that:
   - Parameters:
     - `path`: The path to the file to read
     - `encoding` (optional): File encoding (default: utf-8)
-    - `maxCharacters` (optional): Maximum character count (default: 100,000)
+    - `maxCharacters` (optional): Maximum character count (default: 200,000)
 
 ### Edit Tools
 - **create_file_code**: Creates a new file using VS Code's WorkspaceEdit API
