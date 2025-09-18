@@ -68,8 +68,8 @@ export async function listWorkspaceFiles(workspacePath: string, recursive: boole
  * @param workspacePath The path within the workspace to the file
  * @param encoding Optional encoding to convert the file content to a string
  * @param maxCharacters Maximum character count (default: 200,000)
- * @param startLine The start line number (0-based, inclusive). Use -1 to read from the beginning.
- * @param endLine The end line number (0-based, inclusive). Use -1 to read to the end.
+ * @param startLine The start line number (1-based, inclusive). Use -1 to read from the beginning.
+ * @param endLine The end line number (1-based, inclusive). Use -1 to read to the end.
  * @returns File content as Uint8Array or string if encoding is provided
  */
 export async function readWorkspaceFile(
@@ -103,22 +103,24 @@ export async function readWorkspaceFile(
             const textContent = textDecoder.decode(fileContent);
             
             // If line numbers are specified and valid, extract just those lines BEFORE checking character limit
-            if (startLine >= 0 || endLine >= 0) {
+            if (startLine > 0 || endLine > 0) {
                 // Split the content into lines
                 const lines = textContent.split('\n');
                 
-                // Set effective start and end lines
-                const effectiveStartLine = startLine >= 0 ? startLine : 0;
-                const effectiveEndLine = endLine >= 0 ? Math.min(endLine, lines.length - 1) : lines.length - 1;
+                // Convert 1-based line numbers to 0-based for array indexing
+                // startLine > 0 means user specified a line (1-based), convert to 0-based
+                // startLine <= 0 means read from beginning (use 0)
+                const effectiveStartLine = startLine > 0 ? startLine - 1 : 0;
+                const effectiveEndLine = endLine > 0 ? Math.min(endLine - 1, lines.length - 1) : lines.length - 1;
                 
-                // Validate line numbers
-                if (effectiveStartLine >= lines.length) {
-                    throw new Error(`Start line ${effectiveStartLine} is out of range (0-${lines.length-1})`);
+                // Validate line numbers (using 1-based for error messages)
+                if (startLine > lines.length) {
+                    throw new Error(`Start line ${startLine} is out of range (1-${lines.length})`);
                 }
                 
-                // Make sure endLine is not less than startLine
-                if (effectiveEndLine < effectiveStartLine) {
-                    throw new Error(`End line ${effectiveEndLine} is less than start line ${effectiveStartLine}`);
+                // Make sure endLine is not less than startLine (use 1-based for error message)
+                if (endLine > 0 && endLine < startLine) {
+                    throw new Error(`End line ${endLine} is less than start line ${startLine}`);
                 }
                 
                 // Extract the requested lines and join them back together
@@ -129,7 +131,10 @@ export async function readWorkspaceFile(
                     throw new Error(`Filtered content exceeds the maximum character limit (${partialContent.length} vs ${maxCharacters} allowed)`);
                 }
                 
-                console.log(`[readWorkspaceFile] Returning lines ${effectiveStartLine}-${effectiveEndLine}, length: ${partialContent.length} characters`);
+                // Log with 1-based line numbers for user clarity
+                const displayStartLine = startLine > 0 ? startLine : 1;
+                const displayEndLine = endLine > 0 ? endLine : lines.length;
+                console.log(`[readWorkspaceFile] Returning lines ${displayStartLine}-${displayEndLine}, length: ${partialContent.length} characters`);
                 return partialContent;
             }
             
@@ -146,7 +151,7 @@ export async function readWorkspaceFile(
             }
             
             // For binary files, we cannot extract lines, so we ignore startLine and endLine
-            if (startLine >= 0 || endLine >= 0) {
+            if (startLine > 0 || endLine > 0) {
                 console.warn(`[readWorkspaceFile] Line numbers specified for binary file, ignoring`);
             }
             
@@ -244,8 +249,8 @@ export function registerFileTools(
             path: z.string().describe('The path to the file to read'),
             encoding: z.string().optional().default('utf-8').describe('Optional encoding to convert the file content to a string'),
             maxCharacters: z.number().optional().default(DEFAULT_MAX_CHARACTERS).describe('Maximum character count (default: 200,000)'),
-            startLine: z.number().optional().default(-1).describe('The start line number (0-based, inclusive). Default: read from beginning, denoted by -1'),
-            endLine: z.number().optional().default(-1).describe('The end line number (0-based, inclusive). Default: read to end, denoted by -1')
+            startLine: z.number().optional().default(-1).describe('The start line number (1-based, inclusive). Default: read from beginning, denoted by -1'),
+            endLine: z.number().optional().default(-1).describe('The end line number (1-based, inclusive). Default: read to end, denoted by -1')
         },
         async ({ path, encoding = 'utf-8', maxCharacters = DEFAULT_MAX_CHARACTERS, startLine = -1, endLine = -1 }): Promise<CallToolResult> => {
             console.log(`[read_file] Tool called with path=${path}, encoding=${encoding || 'none'}, maxCharacters=${maxCharacters}, startLine=${startLine}, endLine=${endLine}`);

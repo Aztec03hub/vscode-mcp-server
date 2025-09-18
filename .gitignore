@@ -6,3 +6,5 @@ node_modules
 .serena
 plans
 .vscode-mcp-output/
+.aidigestignore
+codebase.md
