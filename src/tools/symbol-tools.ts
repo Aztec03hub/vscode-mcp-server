@@ -64,8 +64,9 @@ function uriToWorkspacePath(uri: vscode.Uri): string {
 /**
  * Get a preview of the code at a specific line
  * @param uri The URI of the document
- * @param line The line number (0-based)
+ * @param line The line number (0-based) - internal use only
  * @returns The line content as a string or undefined if not available
+ * @internal This function expects 0-based line numbers. Callers should convert from 1-based if needed.
  */
 async function getPreview(uri: vscode.Uri, line?: number): Promise<string | undefined> {
     if (line === undefined) {
@@ -107,8 +108,9 @@ async function getPreview(uri: vscode.Uri, line?: number): Promise<string | unde
 /**
  * Get the text content of a specific line in a file
  * @param uri The URI of the document
- * @param line The line number (0-based)
+ * @param line The line number (0-based) - internal use only
  * @returns The text content of the line or undefined if line doesn't exist
+ * @internal This function expects 0-based line numbers. Callers should convert from 1-based if needed.
  */
 async function getLineText(uri: vscode.Uri, line: number): Promise<string | undefined> {
     try {
@@ -378,7 +380,7 @@ export function registerSymbolTools(server: McpServer): void {
         - Quick reference for APIs or library functions`,
         {
             path: z.string().describe('The path to the file containing the symbol'),
-            line: z.number().describe('The line number of the symbol (0-based)'),
+            line: z.number().describe('The line number of the symbol (1-based)'),
             symbol: z.string().describe('The symbol name to look for on the specified line')
         },
         async ({ path, line, symbol }): Promise<CallToolResult> => {
@@ -400,8 +402,9 @@ export function registerSymbolTools(server: McpServer): void {
                     throw new Error(`File not found: ${path}`);
                 }
                 
-                // Get the content of the specified line
-                const lineText = await getLineText(uri, line);
+                // Get the content of the specified line (convert from 1-based to 0-based)
+                const lineIndex = line - 1;  // Convert 1-based to 0-based
+                const lineText = await getLineText(uri, lineIndex);
                 if (!lineText) {
                     throw new Error(`Line ${line} not found in file: ${path}`);
                 }
@@ -420,7 +423,7 @@ export function registerSymbolTools(server: McpServer): void {
                 }
                 
                 // Create a position object
-                const position = new vscode.Position(line, character);
+                const position = new vscode.Position(lineIndex, character);
                 
                 // Get hover information
                 const hoverResult = await getSymbolHoverInfo(uri, position);
@@ -445,7 +448,7 @@ export function registerSymbolTools(server: McpServer): void {
                         
                         // Add range if available
                         if (hover.range) {
-                            resultText += `Symbol range: [${hover.range.start.line}:${hover.range.start.character}] to [${hover.range.end.line}:${hover.range.end.character}]\n\n`;
+                            resultText += `Symbol range: [${hover.range.start.line + 1}:${hover.range.start.character}] to [${hover.range.end.line + 1}:${hover.range.end.character}]\n\n`;
                         }
                     }
                 }

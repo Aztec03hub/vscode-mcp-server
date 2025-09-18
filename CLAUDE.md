@@ -377,6 +377,60 @@ send_input_to_shell({
 **Files Modified:**
 * `src/tools/shell-tools.ts`: Added terminal output capture functions and enhanced send_input_to_shell
 
+### 2025-09-18: Convert Line Numbering from 0-based to 1-based ✅
+**Task:** Update `apply_diff` tool in edit-tools.ts and `get_symbol_definition_code` tool in symbol-tools.ts to use 1-based line numbering for user-facing interfaces, matching the change already made in file-tools.ts.
+
+**Implementation:** 
+1. **edit-tools.ts changes:**
+   - Updated `DiffSection` interface documentation to specify 1-based line numbers
+   - Modified `normalizeDiffSections` to convert user's 1-based input to 0-based for internal array operations
+   - Updated all logging and error messages to display 1-based line numbers
+   - Updated tool registration parameter descriptions to specify 1-based numbering
+   - Preserved special value `-1` for `endLine` (means "to end of file")
+
+2. **symbol-tools.ts changes:**
+   - Updated `get_symbol_definition_code` tool parameter description to specify 1-based line numbers
+   - Added conversion from 1-based to 0-based when calling internal VS Code APIs
+   - Updated hover range display to show 1-based line numbers
+
+**Key Technical Details:**
+- Internal logic remains 0-based (JavaScript array indices)
+- Conversion happens at API boundaries only
+- Formula: `internalIndex = userLineNumber - 1` (for positive line numbers)
+- Special handling for `-1` which retains its meaning
+- All user-facing messages now display 1-based line numbers
+
+**Benefits:**
+- Consistent with text editor line numbering (VS Code, vim, etc.)
+- Matches the pattern already established in `file-tools.ts`
+- More intuitive for users who don't need to mentally convert
+- Maintains backward compatibility internally
+
+**Status:** Implementation completed, compiled, and linted successfully.
+
+**Additional Changes (Part 2):**
+1. **replace_lines_code tool**:
+   - Updated parameter descriptions to specify 1-based line numbers
+   - Added conversion logic in tool handler to convert from 1-based to 0-based
+   - Tool now accepts user-friendly 1-based line numbers
+
+2. **replaceWorkspaceFileLines function**:
+   - Kept as internal 0-based function for compatibility
+   - Updated documentation to clarify it expects 0-based input
+   - Updated error messages to display 1-based line numbers to users
+   - Updated logging to show both 1-based (user) and 0-based (internal) numbers
+
+3. **getPreview and getLineText functions**:
+   - No logic changes (already receive 0-based from callers)
+   - Updated documentation to clarify they are internal functions expecting 0-based input
+   - Marked with @internal JSDoc tag
+
+**Design Decision:** Maintained clear boundary between user-facing tools (1-based) and internal functions (0-based) to preserve compatibility while improving user experience.
+
+**Files Modified:**
+* `src/tools/edit-tools.ts`: Updated apply_diff tool, replace_lines_code tool, and related functions for 1-based line numbering
+* `src/tools/symbol-tools.ts`: Updated get_symbol_definition_code tool and documented internal functions
+
 ### 2025-09-05: Fix read_file_code Line Filtering for Large Files ✅
 **Task:** Fix `read_file_code` tool not respecting `startLine` and `endLine` parameters for files over 200,000 characters.
 

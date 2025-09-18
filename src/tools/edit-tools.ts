@@ -19,8 +19,8 @@ const fileContentCache = new Map<string, {
 const CACHE_TTL = 5000;
 
 interface DiffSection {
-    startLine: number;     // 0-based line number
-    endLine: number;       // 0-based line number (inclusive)
+    startLine: number;     // 1-based line number
+    endLine: number;       // 1-based line number (inclusive)
     search?: string;        // Content to search for (formerly originalContent)
     replace?: string;       // Content to replace with (formerly newContent)
     description?: string;  // Optional description for this section
@@ -436,7 +436,12 @@ interface NormalizedDiffSection extends DiffSection {
  */
 function normalizeDiffSections(diffs: DiffSection[]): NormalizedDiffSection[] {
     return diffs.map((diff, index) => {
-        const normalized: DiffSection = { ...diff };
+        // Convert from 1-based to 0-based line numbers for internal use
+        const normalized: DiffSection = {
+            ...diff,
+            startLine: diff.startLine > 0 ? diff.startLine - 1 : 0,  // Convert 1-based to 0-based
+            endLine: diff.endLine > 0 ? diff.endLine - 1 : diff.endLine  // Preserve -1 for "to end of file"
+        };
         
         // Handle backward compatibility
         if (diff.originalContent !== undefined && diff.search === undefined) {
@@ -474,7 +479,7 @@ function normalizeDiffSections(diffs: DiffSection[]): NormalizedDiffSection[] {
         }
 
         // Handle special case: endLine: -1 means replace from startLine to end of file
-        if (diff.endLine === -1) {
+        if (normalized.endLine === -1) {
             console.log(`[normalizeDiffSections] Diff ${index}: endLine: -1 detected - full file replacement from line ${diff.startLine}`);
             
             // For full file replacement, the search content should typically be empty
@@ -1433,6 +1438,7 @@ async function validateDiffSections(
     const suggestions: string[] = [];
 
     // Sort diffs by line number for processing
+    // Note: sortedDiffs will have 0-based line numbers after normalization
     const sortedDiffs = [...diffs].sort((a, b) => a.startLine - b.startLine);
 
     // Special handling for empty files (new or existing)
@@ -1457,7 +1463,7 @@ async function validateDiffSections(
                     issues: []
                 });
                 continue;
-            } else if ((diff.search === '' || diff.search.trim() === '') || (diff.startLine === 0 && diff.endLine === 0)) {
+            } else if ((diff.search === '' || diff.search.trim() === '')) {
                 // Normal insert for new files
                 // Calculate how many lines this diff will add
                 const linesToAdd = diff.replace.split('\n').length;
@@ -1478,7 +1484,7 @@ async function validateDiffSections(
                     type: 'content_mismatch',
                     diffIndex1: i,
                     description: `Cannot find content in new file: ${diff.search.substring(0, 50)}...`,
-                    suggestion: 'For new files, use empty search content or set startLine/endLine to 0'
+                    suggestion: 'For new files, use empty search content or set startLine/endLine to 1'
                 });
             }
         }
@@ -1502,11 +1508,14 @@ async function validateDiffSections(
     // Validate each diff section
     for (let i = 0; i < normalizedDiffs.length; i++) {
         const diff = normalizedDiffs[i];
-        console.log(`[validateDiffSections] Processing diff ${i}: lines ${diff.startLine}-${diff.endLine}`);
+        // Display 1-based line numbers to user (diff already has 0-based internally)
+        const displayStartLine = diff.startLine + 1;
+        const displayEndLine = diff.endLine === -1 ? -1 : diff.endLine + 1;
+        console.log(`[validateDiffSections] Processing diff ${i}: lines ${displayStartLine}-${displayEndLine}`);
 
         // Special handling for endLine: -1 (full file replacement)
         if (diff.endLine === -1) {
-            console.log(`[validateDiffSections] Diff ${i}: Processing full file replacement from line ${diff.startLine}`);
+            console.log(`[validateDiffSections] Diff ${i}: Processing full file replacement from line ${diff.startLine + 1}`);
             
             // For full file replacement, create a match that covers from startLine to end of file
             const actualEndLine = Math.max(0, lines.length - 1);
@@ -1541,13 +1550,13 @@ async function validateDiffSections(
                     actualContent: actualContent,
                     issues: []
                 });
-                console.log(`[validateDiffSections] Diff ${i}: Full file replacement validated successfully (lines ${diff.startLine}-${actualEndLine})`);
+                console.log(`[validateDiffSections] Diff ${i}: Full file replacement validated successfully (lines ${diff.startLine + 1}-${actualEndLine + 1})`);
                 continue; // Skip normal validation for this diff
             } else {
                 conflicts.push({
                     type: 'content_mismatch',
                     diffIndex1: i,
-                    description: `Full file replacement search content doesn't match actual content from line ${diff.startLine}`,
+                    description: `Full file replacement search content doesn't match actual content from line ${diff.startLine + 1}`,
                     suggestion: 'For full file replacement with endLine: -1, use empty search content or ensure search matches content from startLine to end'
                 });
                 matches.push(null);
@@ -1743,7 +1752,10 @@ async function createModifiedContent(
         .sort((a, b) => hasNewFileInserts ? a.match.startLine - b.match.startLine : b.match.startLine - a.match.startLine);
 
     for (const { match, diff } of sortedChanges) {
-        console.log(`[createModifiedContent] Applying change at lines ${match.startLine}-${match.endLine}`);
+        // Display 1-based line numbers in logging (match has 0-based internally)
+        const displayStartLine = match.startLine + 1;
+        const displayEndLine = match.endLine + 1;
+        console.log(`[createModifiedContent] Applying change at lines ${displayStartLine}-${displayEndLine}`);
         
         // Split replacement content preserving original line endings
         const newLines = diff.replace.split(/\r?\n/);
@@ -2406,11 +2418,12 @@ export async function createWorkspaceFile(
 /**
  * Replaces specific lines in a file in the VS Code workspace
  * @param workspacePath The path within the workspace to the file
- * @param startLine The start line number (0-based, inclusive)
- * @param endLine The end line number (0-based, inclusive)
+ * @param startLine The start line number (0-based, inclusive) - internal use only
+ * @param endLine The end line number (0-based, inclusive) - internal use only
  * @param content The new content to replace the lines with
  * @param originalCode The original code for validation
  * @returns Promise that resolves when the edit operation completes
+ * @internal This function expects 0-based line numbers. User-facing tools should convert from 1-based.
  */
 export async function replaceWorkspaceFileLines(
     workspacePath: string,
@@ -2419,7 +2432,7 @@ export async function replaceWorkspaceFileLines(
     content: string,
     originalCode: string
 ): Promise<void> {
-    console.log(`[replaceWorkspaceFileLines] Starting with path: ${workspacePath}, lines: ${startLine}-${endLine}`);
+    console.log(`[replaceWorkspaceFileLines] Starting with path: ${workspacePath}, lines: ${startLine + 1}-${endLine + 1} (internal: ${startLine}-${endLine})`);
     
     if (!vscode.workspace.workspaceFolders) {
         throw new Error('No workspace folder is open');
@@ -2438,10 +2451,10 @@ export async function replaceWorkspaceFileLines(
         
         // Validate line numbers
         if (startLine < 0 || startLine >= document.lineCount) {
-            throw new Error(`Start line ${startLine} is out of range (0-${document.lineCount-1})`);
+            throw new Error(`Start line ${startLine + 1} is out of range (1-${document.lineCount})`);
         }
         if (endLine < startLine || endLine >= document.lineCount) {
-            throw new Error(`End line ${endLine} is out of range (${startLine}-${document.lineCount-1})`);
+            throw new Error(`End line ${endLine + 1} is out of range (${startLine + 1}-${document.lineCount})`);
         }
         
         // Get the current content of the lines
@@ -2473,7 +2486,7 @@ export async function replaceWorkspaceFileLines(
         });
         
         if (success) {
-            console.log(`[replaceWorkspaceFileLines] Lines replaced successfully`);
+            console.log(`[replaceWorkspaceFileLines] Lines ${startLine + 1}-${endLine + 1} replaced successfully`);
             
             // Save the document to persist changes
             await document.save();
@@ -2544,8 +2557,8 @@ export function registerEditTools(server: McpServer): void {
             `,
         {
             path: z.string().describe('The path to the file to modify'),
-            startLine: z.number().describe('The start line number (0-based, inclusive)'),
-            endLine: z.number().describe('The end line number (0-based, inclusive)'),
+            startLine: z.number().describe('The start line number (1-based, inclusive)'),
+            endLine: z.number().describe('The end line number (1-based, inclusive)'),
             content: z.string().describe('The new content to replace the lines with'),
             originalCode: z.string().describe('The original code for validation - must match exactly')
         },
@@ -2553,8 +2566,11 @@ export function registerEditTools(server: McpServer): void {
             console.log(`[replace_lines_code] Tool called with path=${path}, startLine=${startLine}, endLine=${endLine}`);
             
             try {
-                console.log('[replace_lines_code] Replacing lines');
-                await replaceWorkspaceFileLines(path, startLine, endLine, content, originalCode);
+                // Convert from 1-based to 0-based for internal function
+                const startLineIndex = startLine - 1;
+                const endLineIndex = endLine - 1;
+                console.log(`[replace_lines_code] Replacing lines ${startLine}-${endLine} (internal: ${startLineIndex}-${endLineIndex})`);
+                await replaceWorkspaceFileLines(path, startLineIndex, endLineIndex, content, originalCode);
                 
                 const result: CallToolResult = {
                     content: [
@@ -2594,7 +2610,8 @@ export function registerEditTools(server: McpServer): void {
         - Handles whitespace and indentation differences gracefully
         - Shows confidence levels for fuzzy matches
         - Requires user approval before applying changes
-        - For full file replacement, use startLine: 0, endLine: -1, empty search string
+                startLine: z.number().describe('Starting line number (1-based, hint for search)'),
+                endLine: z.number().describe('Ending line number (1-based, inclusive, hint for search). Use -1 to replace from startLine to end of file'),
 
         Example usage:
         - Updating multiple import statements
@@ -2602,13 +2619,14 @@ export function registerEditTools(server: McpServer): void {
         - Adding multiple related code sections
         - Creating new files with initial content
         - **Full file replacement**: Replace entire file contents
+        - For full file replacement, use startLine: 1, endLine: -1, empty search string
         `,
         {
             filePath: z.string().describe('Path to the file to modify or create'),
             description: z.string().optional().describe('Overall description of the changes'),
             diffs: z.array(z.object({
-                startLine: z.number().describe('Starting line number (0-based, hint for search)'),
-                endLine: z.number().describe('Ending line number (0-based, hint for search). Use -1 to replace from startLine to end of file'),
+                startLine: z.number().describe('Starting line number (1-based, hint for search)'),
+                endLine: z.number().describe('Ending line number (1-based, inclusive, hint for search). Use -1 to replace from startLine to end of file'),
                 search: z.string().optional().describe('Content to search for (formerly originalContent)'),
                 replace: z.string().optional().describe('Content to replace with (formerly newContent)'),
                 description: z.string().optional().describe('Description of this change section'),
