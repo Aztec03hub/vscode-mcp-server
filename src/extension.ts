@@ -3,6 +3,8 @@ import { MCPServer } from './server';
 import { listWorkspaceFiles } from './tools/file-tools';
 import { applyDiff } from './tools/edit-tools';
 import { logger } from './utils/logger';
+import * as dotenv from 'dotenv';
+import * as path from 'path';
 
 // Re-export for testing purposes
 export { MCPServer };
@@ -417,6 +419,27 @@ async function toggleServerState(context: vscode.ExtensionContext): Promise<void
 export async function activate(context: vscode.ExtensionContext) {
     logger.info('Activating vscode-mcp-server extension');
     logger.showChannel(); // Show the output channel for easy access to logs
+
+    // Load environment variables from .env file
+    if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+        const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        const envPath = path.join(workspaceRoot, '.env');
+        const result = dotenv.config({ path: envPath });
+        
+        if (result.error) {
+            logger.warn(`[activate] Could not load .env file from ${envPath}: ${result.error.message}`);
+            logger.info('[activate] Will use system environment variables instead');
+        } else {
+            logger.info(`[activate] Successfully loaded environment variables from ${envPath}`);
+            if (process.env.ANTHROPIC_API_KEY) {
+                logger.info('[activate] ANTHROPIC_API_KEY is available for token counting');
+            } else {
+                logger.warn('[activate] ANTHROPIC_API_KEY not found in .env file');
+            }
+        }
+    } else {
+        logger.info('[activate] No workspace folder found, skipping .env loading');
+    }
 
     try {
         // Get configuration

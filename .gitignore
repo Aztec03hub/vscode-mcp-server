@@ -8,3 +8,4 @@ plans
 .vscode-mcp-output/
 .aidigestignore
 codebase.md
+.env

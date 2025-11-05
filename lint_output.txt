@@ -1,0 +1,4 @@
+
+> vscode-mcp-server@0.0.4 lint
+> eslint src
+

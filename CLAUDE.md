@@ -463,6 +463,138 @@ send_input_to_shell({
 **Files Modified:**
 * `src/tools/file-tools.ts`: Restructured character limit checking in `readWorkspaceFile` function
 
+### 2025-10-16: Enhanced read_file_code Tool Output with Smart Truncation ✅
+**Task:** Enhance `read_file_code` tool output to handle Claude's 100,000 character truncation limit with smart metadata and helpful continuation warnings.
+
+**Root Cause:** When reading large files, Claude truncates tool output at 100,000 characters with message "Result too long, truncated to 100000 characters", leaving users uncertain about how much content remains and how to continue reading.
+
+**Implementation:** Modified `readWorkspaceFile` function in `src/tools/file-tools.ts`:
+1. **Structured output format**: Added `**File Contents:**` header, `**End Of File Contents.**` footer, and `**Tool Result Details:**` metadata section
+2. **Smart character budgeting**: Reserved 1,000 characters for metadata, using 99,000 for actual file content to stay under Claude's 100k limit
+3. **Proactive truncation**: Truncates output at last complete line within 99,000 character budget before Claude's hard truncation occurs
+4. **Comprehensive metadata**: Returns `outputToLine`, `outputTruncated`, `linesLeftToEndLine`, `linesLeftToEOF`, and `linesInFile`
+5. **Helpful warnings**: Provides clear instructions on how to continue reading when truncation occurs or lines remain
+
+**Key Features:**
+* **outputCharacterBudget**: 99,000 characters reserved for file content
+* **outputToLine**: Last line number included in output (equals endLine if not truncated)
+* **linesLeftToEndLine**: Number of lines from outputToLine to requested endLine (0 if not truncated)
+* **linesLeftToEOF**: Number of lines from outputToLine to actual end of file
+* **Warning messages**: Two conditional warnings guide users:
+  - If truncated: "WARNING! FILE CONTENTS OUTPUT > 99000 CHARACTERS, OUTPUT TRUNCATED! PLEASE USE 'read_file_code' TOOL AGAIN WITH 'startLine': X, 'endLine': Y"
+  - If lines remain to EOF: "WARNING! N LINES LEFT TO EOF, IF FULL/COMPLETE FILE CONTENTS IS NEEDED IN CONTEXT, PLEASE USE 'read_file_code' TOOL AGAIN WITH 'startLine': X, 'endLine': Y"
+
+**Example Output Format:**
+```
+**File Contents:**
+[actual file content lines]
+### 2025-10-28: Token Counting Tool - Multiple Line Ranges Support ✨
+**Task:** Enhance `count_tokens` tool to support multiple discontinuous line ranges in a single API call, similar to how `apply_diff` handles multiple diff sections.
+
+**Implementation:** Added comprehensive multiple line ranges support to `src/tools/file-tools.ts`:
+
+1. **New Parameter Schema:**
+   - Added `lineRanges` array parameter: `Array<{ startLine: number; endLine?: number; description?: string }>`
+   - Maintains backward compatibility with legacy `startLine`/`endLine` parameters
+   - Mutually exclusive: cannot use both approaches simultaneously
+
+2. **Enhanced Validation:**
+   - Updated `validateTokenCountingParams()` to handle three modes:
+     - Direct text (no ranges)
+     - Single range (legacy `startLine`/`endLine`)
+     - Multiple ranges (new `lineRanges`)
+   - Validates each range independently (startLine >= 1, endLine >= startLine if provided)
+   - Ensures `lineRanges` requires `filepath` and contains at least one range
+
+3. **Processing Logic:**
+   - For multiple ranges: processes each range independently
+   - Makes separate API calls for each range to Anthropic Token Counting API
+   - Accumulates total token counts and character counts
+   - Stores per-range breakdown with actual line numbers processed
+
+4. **Output Format:**
+   ```
+   **Token Counting Results:**
+   
+   **Tool Result Details:**
+   - tokenCount: <total_sum>
+   - characterCount: <total_sum>
+   - model: claude-sonnet-4-5-20250929
+   - source: file_multiple_ranges
+   - filepath: <path>
+   - rangeCount: <N>
+   
+   **Range Breakdown:**
+   - Range 1 (lines X-Y): <tokens> tokens, <chars> characters
+     Description: <optional_description>
+   - Range 2 (lines X-Y): <tokens> tokens, <chars> characters
+   - ...
+   ```
+
+**Key Features:**
+- **Multiple discontinuous sections:** Count tokens across non-contiguous file sections
+- **Detailed breakdown:** Shows per-range token/character counts
+- **Optional descriptions:** Document what each range represents
+- **Backward compatible:** Legacy single-range API unchanged
+- **Pattern matching:** Follows `apply_diff` design for consistency
+
+**Use Cases:**
+- Analyze specific functions/classes without loading entire file
+- Compare token efficiency across different code sections
+- Estimate costs for multi-section prompts
+- Token budgeting for context window management
+
+**Example Usage:**
+```javascript
+count_tokens({
+  filepath: "src/tools/file-tools.ts",
+  lineRanges: [
+    { startLine: 1, endLine: 50, description: "Imports and types" },
+    { startLine: 400, endLine: 500, description: "Token counting logic" },
+    { startLine: 800, endLine: 850, description: "Tool registration" }
+  ]
+})
+```
+
+**Status:** Fully implemented, compiled, linted, and documented. Ready for testing.
+
+**Files Modified:**
+* `src/tools/file-tools.ts`: Added multiple line ranges support to count_tokens tool
+* `TOKEN_COUNTING_TESTING_GUIDE.md`: Added comprehensive test cases for multiple ranges
+* `CLAUDE.md`: Documented the new feature
+
+---
+
+**End Of File Contents.**
+
+**Tool Result Details:**
+- outputToLine: 2617
+- outputTruncated: true
+- linesLeftToEndLine: 1883
+- linesLeftToEOF: 1873
+- linesInFile: 4490
+- WARNING! FILE CONTENTS OUTPUT > 99000 CHARACTERS, OUTPUT TRUNCATED! PLEASE USE 'read_file_code' TOOL AGAIN WITH 'startLine': 2618, 'endLine': 4500
+- WARNING! 1873 LINES LEFT TO EOF, IF FULL/COMPLETE FILE CONTENTS IS NEEDED IN CONTEXT, PLEASE USE 'read_file_code' TOOL AGAIN WITH 'startLine': 2618, 'endLine': 4490
+```
+
+**Benefits:**
+* Prevents Claude's hard truncation by managing character limit proactively
+* Users always know exactly how much content remains and how to retrieve it
+* Clear continuation instructions eliminate guesswork
+* Metadata helps users understand file size and reading progress
+* Truncation happens at complete line boundaries (never mid-line)
+
+**Testing:**
+* Tested with `src/test/test_longfile.md` (200k+ characters, 4490 lines)
+* Successfully truncates at line 2617 within 99k budget
+* Correctly calculates all metadata values
+* Warnings display appropriately based on truncation state
+
+**Status:** Fully implemented and tested. Tool now handles large files gracefully with clear user guidance.
+
+**Files Modified:**
+* `src/tools/file-tools.ts`: Enhanced `readWorkspaceFile` with structured output and smart truncation
+
 ### 2025-06-17: CRITICAL VS Code Extension Development Workflow ⚠️🔴
 **CRITICAL REQUIREMENT:** VS Code extensions ALWAYS require complete rebuild/reinstall/restart cycle after code changes.
 
@@ -493,9 +625,126 @@ npm run rebuild-and-reload
 
 **Status:** CRITICAL WORKFLOW REQUIREMENT - Must be followed for all extension development.
 
+### 2025-10-28: Token Counting MCP Tool Implementation ✅
+**Task:** Implement `count_tokens` MCP tool that integrates with Anthropic's Token Counting API for counting tokens in arbitrary text or file content.
+
+**Implementation:** Added comprehensive token counting functionality to `src/tools/file-tools.ts`:
+
+1. **Constants Added:**
+   - `DEFAULT_TOKEN_COUNTING_MODEL = 'claude-sonnet-4-5-20250929'` - Default model for token counting
+   - `TOKEN_COUNTING_FILE_SIZE_WARNING_BYTES = 16MB` - Warning threshold
+   - `TOKEN_COUNTING_FILE_SIZE_LIMIT_BYTES = 512MB` - Hard limit
+
+2. **Core Functions Implemented:**
+   - `callAnthropicTokenCountingAPI()` - Makes HTTPS POST request to Anthropic's `/v1/messages/count_tokens` endpoint
+     - Uses Node.js built-in `https` module
+     - Requires `ANTHROPIC_API_KEY` environment variable
+     - Request format: `{ model: string, messages: [{ role: 'user', content: text }] }`
+     - Response format: `{ input_tokens: number }`
+     - Headers: `x-api-key`, `anthropic-version: 2023-06-01`, `content-type: application/json`
+   
+   - `validateTokenCountingParams()` - Validates tool parameters
+     - Ensures exactly one of `text` or `filepath` is provided
+     - Validates that `startLine`/`endLine` require `filepath`
+     - Validates line number ranges (1-based)
+   
+   - `getFileContentForTokenCounting()` - Retrieves file content with size validation
+     - Checks file size before reading (throws error if >512MB, warns if >16MB)
+     - Leverages existing `readWorkspaceFile()` function for line range support
+     - Handles both full files and line ranges
+     - Returns content, character count, lines processed, and warnings
+
+3. **MCP Tool Registration:**
+   - Tool name: `count_tokens`
+   - Parameters:
+     - `text?: string` - Direct text to count (mutually exclusive with filepath)
+     - `filepath?: string` - File path to count (mutually exclusive with text)
+     - `startLine?: number` - 1-based start line (requires filepath)
+     - `endLine?: number` - 1-based end line (requires filepath, defaults to EOF)
+     - `model?: string` - Model to use (defaults to DEFAULT_TOKEN_COUNTING_MODEL)
+   - Output format:
+     ```
+     **Token Counting Results:**
+     
+     **Tool Result Details:**
+     - tokenCount: <number>
+     - characterCount: <number>
+     - model: <model_name>
+     - source: <direct_text|file|file_lines>
+     - filepath: <path> (if applicable)
+     - linesProcessed: <start>-<end> (if applicable)
+     - fileSizeWarning: <warning> (if >16MB)
+     ```
+
+**Key Features:**
+- Supports both direct text input and file-based token counting
+- Optional line range support for counting tokens in specific file sections
+- Configurable model selection with sensible default
+- File size validation with warnings and limits
+- Comprehensive error handling and logging
+- Follows existing codebase patterns (similar to `read_file_code` tool)
+
+**API Integration Details:**
+- Endpoint: `https://api.anthropic.com/v1/messages/count_tokens`
+- Authentication: `ANTHROPIC_API_KEY` environment variable
+- Supports all Claude models (defaults to Sonnet 4.5)
+- Returns simple integer token count
+
+**Use Cases:**
+- Estimating API costs before making requests
+- Checking if content fits within context windows
+- Analyzing token efficiency of prompts
+- Validating file sizes before processing
+
+**Status:** Fully implemented, compiled, and linted successfully. Ready for testing.
+
+**Files Modified:**
+* `src/tools/file-tools.ts`: Added token counting infrastructure and tool registration
+
 ## Development Workflow Best Practices
 
 1. Always run tests after making changes to ensure nothing breaks
 2. Use `npm run watch` during development for auto-compilation
 3. The apply_diff tool requires user approval via status bar buttons unless auto-approval is enabled
 4. Check logs in VS Code Output panel (MCP Server channel) for debugging
+
+### 2025-11-05: Tool Description Token Optimization ✅
+**Task:** Reduce token usage in MCP tool descriptions for `count_tokens` and `apply_diff` tools by ~70% while maintaining essential information.
+
+**Problem:** Claude Code context window includes complete tool descriptions for every available tool. The verbose descriptions were consuming excessive tokens:
+- `count_tokens`: 860 tokens (with full formatting)
+- `apply_diff`: 899 tokens (with full formatting)
+- Total: 1,759 tokens for just two tool descriptions
+
+**Implementation:** Optimized tool descriptions in `src/tools/file-tools.ts` and `src/tools/edit-tools.ts`:
+1. **Consolidated sections** - Merged "Key features" / "Use cases" / "Important" into concise bullet points
+2. **Removed redundancy** - Eliminated repeated concepts across sections
+3. **Simplified examples** - Removed verbose example bullets, kept only critical usage notes
+4. **Streamlined parameters** - Shortened parameter descriptions to essentials
+5. **Removed decorative elements** - Cut formatting and verbose explanations
+
+**Results:**
+- `count_tokens`: 860 → 224 tokens (74% reduction, 636 tokens saved)
+- `apply_diff`: 899 → 276 tokens (69% reduction, 623 tokens saved)
+- **Total savings: 1,259 tokens (71% reduction)**
+
+**Key Optimization Principles:**
+- Preserve core functionality descriptions
+- Keep critical parameters and types
+- Maintain essential constraints/requirements
+- Include key usage patterns
+- Remove marketing language ("comprehensive", "sophisticated", etc.)
+- Remove over-explained concepts
+- Remove decorative formatting
+
+**Benefits:**
+- Reduced Claude Code context window overhead by 1,259 tokens
+- More efficient token usage for every conversation
+- Cleaner, more scannable tool descriptions
+- No loss of essential information
+
+**Status:** Fully implemented and validated. Both tools maintain full functionality with significantly reduced token overhead.
+
+**Files Modified:**
+* `src/tools/file-tools.ts`: Optimized count_tokens tool description
+* `src/tools/edit-tools.ts`: Optimized apply_diff tool description

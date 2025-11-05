@@ -1736,7 +1736,7 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
     );
 
     // Add test_terminal_focus tool - Phase 1 of enhanced send_input_to_shell
-    server.tool(
+    /*server.tool(
         'test_terminal_focus',
         'Test terminal focus functionality by creating test shells and verifying focus control. Phase 1 of enhanced send_input_to_shell implementation.',
         {},
@@ -1760,10 +1760,10 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 throw new Error(`Test failed: ${errorMessage}`);
             }
         }
-    );
+    );//*/
 
     // Add test_shell_cwd tool
-    server.tool(
+    /*server.tool(
         'test_shell_cwd',
         'Test shell integration cwd timing to see how long it takes to update after directory changes',
         {},
@@ -1787,7 +1787,7 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                 throw new Error(`Test failed: ${errorMessage}`);
             }
         }
-    );
+    );//*/
 
     // Add list_active_shells tool
     server.tool(

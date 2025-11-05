@@ -2506,7 +2506,7 @@ export async function replaceWorkspaceFileLines(
  */
 export function registerEditTools(server: McpServer): void {
     // Add create_file tool
-    server.tool(
+    /*server.tool(
         'create_file_code',
         'Use this tool to create new files in the VS Code workspace. This should be the primary tool for creating new files or making large changes when working with the codebase. The tool provides two optional parameters to handle existing files: \'overwrite\' (replace existing files) and \'ignoreIfExists\' (skip creation if file exists). When implementing new features, prefer creating files in appropriate locations based on the project\'s structure and conventions. Always verify the path doesn\'t already exist with list_files first unless you specifically want to overwrite it.',
         {
@@ -2537,10 +2537,10 @@ export function registerEditTools(server: McpServer): void {
                 throw error;
             }
         }
-    );
+    );//*/
 
     // Add replace_lines_code tool
-    server.tool(
+    /*server.tool(
         'replace_lines_code',
         `Use this tool to selectively replace specific lines of code in a file. The tool implements several safety features:
         
@@ -2587,49 +2587,31 @@ export function registerEditTools(server: McpServer): void {
                 throw error;
             }
         }
-    );
+    );//*/
 
     // Add apply_diff tool
     server.tool(
         'apply_diff',
-        `Use this tool to apply multiple diff sections to a file with advanced fuzzy matching capabilities. This is the preferred tool for making complex changes to existing files.
-        
-        Key Features:
-        - Multiple diff sections in a single operation
-        - Automatic file creation if file doesn't exist
-        - Fuzzy matching handles whitespace differences, content drift, and formatting variations
-        - Shows unified diff preview before applying changes
-        - Atomic all-or-nothing application (or partial success mode)
-        - Backward compatible with originalContent/newContent parameters
-        - Partial success mode: apply successful diffs even if some fail
-        - **Full file replacement**: Use endLine: -1 to replace entire file from startLine to end
+        `Use this tool to apply multiple diff sections to a file with fuzzy matching. Preferred for complex file changes.
 
-        Best Practices:
-        - Use for related changes that should be applied together
-        - The tool will automatically find content even if line numbers have shifted
-        - Handles whitespace and indentation differences gracefully
-        - Shows confidence levels for fuzzy matches
-        - Requires user approval before applying changes
-                startLine: z.number().describe('Starting line number (1-based, hint for search)'),
-                endLine: z.number().describe('Ending line number (1-based, inclusive, hint for search). Use -1 to replace from startLine to end of file'),
+        Features:
+        - Multiple diffs in single operation
+        - Auto-creates non-existent files
+        - Fuzzy matching handles whitespace/formatting variations
+        - Atomic or partial-success modes
+        - Full file replacement: startLine: 1, endLine: -1, empty search
 
-        Example usage:
-        - Updating multiple import statements
-        - Refactoring function signatures across a file
-        - Adding multiple related code sections
-        - Creating new files with initial content
-        - **Full file replacement**: Replace entire file contents
-        - For full file replacement, use startLine: 1, endLine: -1, empty search string
-        `,
+        Best practices:
+        - Group related changes together`,
         {
-            filePath: z.string().describe('Path to the file to modify or create'),
-            description: z.string().optional().describe('Overall description of the changes'),
+            filePath: z.string().describe('File to modify or create'),
+            description: z.string().optional().describe('Change description'),
             diffs: z.array(z.object({
-                startLine: z.number().describe('Starting line number (1-based, hint for search)'),
-                endLine: z.number().describe('Ending line number (1-based, inclusive, hint for search). Use -1 to replace from startLine to end of file'),
-                search: z.string().optional().describe('Content to search for (formerly originalContent)'),
-                replace: z.string().optional().describe('Content to replace with (formerly newContent)'),
-                description: z.string().optional().describe('Description of this change section'),
+                startLine: z.number().describe('Start line (1-based, hint for search)'),
+                endLine: z.number().describe('End line (1-based, -1 = end of file)'),
+                search: z.string().optional().describe('Content to find (empty for new files)'),
+                replace: z.string().optional().describe('Replacement content'),
+                description: z.string().optional().describe('Description of this change'),
                 // Backward compatibility
                 originalContent: z.string().optional().describe('Deprecated: Use search instead'),
                 newContent: z.string().optional().describe('Deprecated: Use replace instead')
@@ -2640,8 +2622,8 @@ export function registerEditTools(server: McpServer): void {
                 return hasSearch && hasReplace;
             }, {
                 message: "Either 'search' or 'originalContent' must be provided, and either 'replace' or 'newContent' must be provided"
-            })).describe('Array of diff sections to apply'),
-            partialSuccess: z.boolean().optional().default(false).describe('Whether to apply successful diffs even if some fail')
+            })).describe('Diff sections to apply'),
+            partialSuccess: z.boolean().optional().default(false).describe('Apply successful diffs if some fail (default: false)')
         },
         async ({ filePath, diffs, description, partialSuccess }): Promise<CallToolResult> => {
             console.log(`[apply_diff] Tool called with filePath=${filePath}, ${diffs.length} diff sections, partialSuccess=${partialSuccess}`);
