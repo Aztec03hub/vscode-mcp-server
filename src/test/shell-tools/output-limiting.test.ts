@@ -137,6 +137,9 @@ import {
         
         // Test truncation message components
         const expectedTruncationMessage = `Output too long, truncated to ${DEFAULT_OUTPUT_CHARACTER_LIMIT.toLocaleString()} characters.`;
+        console.log(`[Truncation Test] Original output length: ${LONG_OUTPUT.length.toLocaleString()} characters`);
+        console.log(`[Truncation Test] Truncated output length: ${truncatedOutput.length.toLocaleString()} characters`);
+        console.log(`[Truncation Test] Truncation message: "${expectedTruncationMessage}"`);
         assert.ok(expectedTruncationMessage.includes('100,000'), 'Truncation message should include formatted character count');
     });
     
@@ -151,6 +154,8 @@ import {
         // Test with different file names
         const testFileName = 'test-shell-1-output.txt';
         const fullSilenceMessage = `Command completed, full output saved to file <${testFileName}>`;
+        console.log(`[Silence Flag Test] Base silence message: "${expectedSilenceMessage}"`);
+        console.log(`[Silence Flag Test] Full silence message with file: "${fullSilenceMessage}"`);
         assert.ok(fullSilenceMessage.includes(testFileName), 'Message should include file name');
         assert.ok(fullSilenceMessage.includes('<'), 'Message should use angle brackets around filename');
         assert.ok(fullSilenceMessage.includes('>'), 'Message should close angle brackets around filename');

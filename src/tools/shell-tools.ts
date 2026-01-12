@@ -105,11 +105,81 @@ const INTERACTIVE_KEYWORDS = [
     '[yes/no]'
 ];
 
+// Shell-specific command guidance for agents
+const SHELL_COMMAND_GUIDANCE: Record<string, string> = {
+    'PowerShell': 'Use PowerShell cmdlets and syntax. Avoid bash-style commands like `ls -la`, `&&` chains, or `$VAR`. Use `Get-ChildItem`, `;` for chaining, and `$env:VAR` for environment variables.',
+    'CommandPrompt': 'Use Windows CMD syntax. Use `dir` instead of `ls`, `set VAR=value` for variables, and `&` or `&&` for command chaining.',
+    'Bash': 'Use bash/Unix syntax. Commands like `ls`, `grep`, `$VAR`, `&&` chains, and pipes work here.',
+    'Zsh': 'Use zsh/Unix syntax (similar to bash). Commands like `ls`, `grep`, `$VAR`, `&&` chains work here.',
+    'GitBash': 'Use bash syntax. This is Git Bash on Windows - Unix commands work but Windows paths may need adjustment.',
+    'WSL': 'Use Linux/bash syntax. This is Windows Subsystem for Linux - full Linux command support.',
+    'Fish': 'Use fish shell syntax. Note: fish uses different syntax for variables (`set VAR value`) and no `&&` (use `; and` instead).',
+    'Unknown': 'Shell type not detected. Try common commands and adjust based on errors.'
+};
+
+/**
+ * Detects the shell type based on VS Code terminal configuration and platform
+ * @returns The detected shell type
+ */
+function detectShellType(): ShellType {
+    const platform = process.platform;
+    
+    // Get the default terminal profile for the current platform
+    const profileConfig = vscode.workspace.getConfiguration('terminal.integrated.defaultProfile');
+    const defaultProfile = profileConfig.get<string>(platform === 'win32' ? 'windows' : platform === 'darwin' ? 'osx' : 'linux');
+    
+    if (defaultProfile) {
+        const profileLower = defaultProfile.toLowerCase();
+        
+        // Check for specific shell types
+        if (profileLower.includes('powershell') || profileLower.includes('pwsh')) {
+            return 'PowerShell';
+        }
+        if (profileLower.includes('cmd') || profileLower.includes('command prompt')) {
+            return 'CommandPrompt';
+        }
+        if (profileLower.includes('git bash') || profileLower.includes('gitbash')) {
+            return 'GitBash';
+        }
+        if (profileLower.includes('wsl') || profileLower.includes('ubuntu') || profileLower.includes('debian')) {
+            return 'WSL';
+        }
+        if (profileLower.includes('zsh')) {
+            return 'Zsh';
+        }
+        if (profileLower.includes('fish')) {
+            return 'Fish';
+        }
+        if (profileLower.includes('bash')) {
+            return 'Bash';
+        }
+    }
+    
+    // Platform-based fallback
+    if (platform === 'win32') {
+        // Windows defaults to PowerShell in modern VS Code
+        return 'PowerShell';
+    } else if (platform === 'darwin') {
+        // macOS defaults to zsh
+        return 'Zsh';
+    } else {
+        // Linux defaults to bash
+        return 'Bash';
+    }
+}
+
+// Shell status types
+type ShellStatus = 'idle' | 'busy' | 'waiting-for-input' | 'crashed';
+
+// Shell type detection - identifies the shell environment for command guidance
+type ShellType = 'PowerShell' | 'CommandPrompt' | 'Bash' | 'Zsh' | 'GitBash' | 'WSL' | 'Fish' | 'Unknown';
+
 // Interface for managed shell information
 interface ManagedShell {
     id: string;
     terminal: vscode.Terminal;
     name: string;
+    shellType: ShellType;               // Detected shell type (PowerShell, Bash, etc.)
     createdAt: Date;
     lastUsed: Date;
     status: ShellStatus;
@@ -120,9 +190,6 @@ interface ManagedShell {
     timeoutDuration?: number;           // Duration of the current timeout in ms (15s default shell types only)
     timeoutController?: AbortController; // For cancellable async operations (allows aborting on timeout)
 }
-
-// Shell status types
-type ShellStatus = 'idle' | 'busy' | 'waiting-for-input' | 'crashed';
 
 /**
  * Shell Timeout Manager Class
@@ -283,10 +350,14 @@ class ShellRegistry {
             cwd: initialDirectory
         });
 
+        // Detect shell type for command guidance
+        const shellType = detectShellType();
+
         const managedShell: ManagedShell = {
             id: shellId,
             terminal,
             name,
+            shellType,
             createdAt: new Date(),
             lastUsed: new Date(),
             status: 'idle',
@@ -294,7 +365,7 @@ class ShellRegistry {
         };
 
         this.shells.set(shellId, managedShell);
-        console.log(`[Shell Registry] Created new shell: ${shellId} (${name})`);
+        console.log(`[Shell Registry] Created new shell: ${shellId} (${name}) [${shellType}]`);
         
         return managedShell;
     }
@@ -749,7 +820,7 @@ export function detectDestructiveCommand(command: string): string | null {
     return false;
     }
 
-    /**
+/**
  * Modifies a command for PowerShell to include uniqueness counter and delay workaround
  * @param command The original command
  * @returns Modified command with PowerShell-specific workarounds
@@ -1205,11 +1276,23 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
     // Add execute_shell_command tool
     server.tool(
         'execute_shell_command_code',
-        'Executes a shell command in the VS Code integrated terminal with shell integration. Returns command output, working directory context, shell information, and basic exit status. Supports shell selection, interactive commands, and background processes. Enhanced with timeout handling and PowerShell-specific workarounds.',
+        `Executes a shell command in the VS Code integrated terminal with shell integration.
+
+**IMPORTANT WARNINGS:**
+- Sending a new command to a shell already running a long command will INTERRUPT that command
+- Each shell can only run ONE command at a time - use \`background: true\` or create a new shell for concurrent operations
+- Shell ID (e.g., "shell-1") is the unique access handle - different from the display name shown in VS Code terminal tab
+
+**Related Tools:**
+- \`send_input_to_shell\`: Send input to interactive commands OR capture last 20 lines of output (full output in .vscode-mcp-output/{shellId}-output.txt)
+- \`list_active_shells\`: See all active shells with their IDs, types, and statuses
+- \`close_shell\`: Close shells you no longer need to free resources (max ${MAX_SHELLS} shells)
+
+**Shell Types:** Commands must match the shell type (PowerShell vs Bash). The tool output includes shell-specific command guidance.`,
         {
             command: z.string().describe('The shell command to execute'),
             cwd: z.string().optional().default('.').describe('Optional working directory for the command'),
-            shellId: z.string().optional().describe('ID of the shell to use (e.g., "shell-1"). If not provided, uses default shell or creates new one'),
+            shellId: z.string().optional().describe('Shell ID to use (e.g., "shell-1"). This is the unique identifier, NOT the display name. If not provided, uses first available or creates new shell.'),
             interactive: z.boolean().optional().default(false).describe('Set to true for commands that might require user input (uses longer timeout)'),
             background: z.boolean().optional().default(false).describe('Set to true for long-running background processes (returns immediately with shell info)'),
             silenceOutput: z.boolean().optional().default(false).describe('Set to true to suppress output display and save full output to file only (useful for long-running commands)')
@@ -1511,8 +1594,15 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     }
                 }
                 
-                // Detect shell type
-                const shellType = isPowerShellShell() ? 'PowerShell' : 'Command Prompt';
+                // Use the shell's stored type for guidance
+                const shellType = managedShell.shellType;
+                const commandGuidance = SHELL_COMMAND_GUIDANCE[shellType] || SHELL_COMMAND_GUIDANCE['Unknown'];
+                
+                // Get list of active shells for context
+                const allShells = registry.listShells();
+                const activeShellsList = allShells.length > 0 
+                    ? allShells.map(s => `- ${s.id} (${s.shellType}): ${s.status}${s.id === managedShell.id ? ' ← current' : ''}`).join('\n')
+                    : '- No active shells';
                 
                 const result: CallToolResult = {
                     content: [
@@ -1529,7 +1619,12 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                                   `**Interactive Mode:** ${interactive ? 'Yes' : 'No'}\n` +
                                   `**Background Mode:** ${background ? 'Yes' : 'No'}\n` +
                                   `**Silence Output:** ${silenceOutput ? 'Yes' : 'No'}\n\n` +
-                                  `**Output:**\n${finalOutput}${timedOut && interactive ? '\n\n*Use send_input_to_shell if the command is waiting for input.*' : ''}${interactiveDetected ? '\n\n🗨 **Interactive prompt detected!** Use send_input_to_shell to provide input to this shell.' : ''}`
+                                  `**Output:**\n${finalOutput}` +
+                                  `${timedOut && interactive ? '\n\n*Use send_input_to_shell if the command is waiting for input.*' : ''}` +
+                                  `${interactiveDetected ? '\n\n🗨 **Interactive prompt detected!** Use send_input_to_shell to provide input to this shell.' : ''}` +
+                                  `\n\n---\n**Active Shells (${allShells.length}/${MAX_SHELLS}):**\n${activeShellsList}\n\n` +
+                                  `**${shellType} Command Guidance:**\n${commandGuidance}\n\n` +
+                                  `*Output file: .vscode-mcp-output/${managedShell.id}-output.txt*`
                         }
                     ]
                 };
@@ -1646,9 +1741,16 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
     // Add send_input_to_shell tool
     server.tool(
         'send_input_to_shell',
-        'Sends input to a specific shell and captures the last 20 lines of terminal output after the input is processed. Uses VS Code terminal selection to capture arbitrary terminal content including responses to user interactions.',
+        `Sends input to a specific shell and captures terminal output.
+
+**Primary Uses:**
+1. Send input to interactive commands (e.g., scaffolding prompts, confirmations)
+2. Capture the last 20 lines of terminal output to see command results
+3. Read full output from .vscode-mcp-output/{shellId}-output.txt if more lines needed
+
+**Shell ID:** Use the shell's unique ID (e.g., "shell-1"), NOT the display name. Use list_active_shells to find IDs.`,
         {
-            shellId: z.string().describe('ID of the shell to send input to (e.g., "shell-1")'),
+            shellId: z.string().describe('Shell ID (e.g., "shell-1") - the unique identifier, NOT the display name. Use list_active_shells to find available shell IDs.'),
             input: z.string().describe('The input text to send to the shell'),
             includeNewline: z.boolean().optional().default(true).describe('Whether to include a newline character after the input (default: true)'),
             captureOutput: z.boolean().optional().default(true).describe('Whether to capture and return terminal output after sending input (default: true)')
@@ -1833,7 +1935,8 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                         }
                     }
                     
-                    return `**${shell.id}** (${shell.name})\n` +
+                    return `**${shell.id}** (${shell.name}) [${shell.shellType}]\n` +
+                           `  - Shell Type: ${shell.shellType}\n` +
                            `  - Status: ${shell.status}\n` +
                            `  - Current Directory: ${shell.currentDirectory || 'Unknown'}\n` +
                            `  - Running Command: ${shell.runningCommand || 'None'}\n` +
@@ -1846,12 +1949,17 @@ export function registerShellTools(server: McpServer, terminal?: vscode.Terminal
                     content: [
                         {
                             type: 'text',
-                            text: `**Active Shells (${shells.length} total)**\n\n` +
+                            text: `**Active Shells (${shells.length}/${MAX_SHELLS} max)**\n\n` +
                                   `${shellInfo}\n\n` +
+                                  `**Shell ID vs Name:**\n` +
+                                  `- Shell ID (e.g., "shell-1") is the unique identifier - use this in tool calls\n` +
+                                  `- Shell Name is the display name shown in VS Code terminal tab\n\n` +
                                   `**Usage:**\n` +
-                                  `- Use execute_shell_command_code with shellId parameter to use a specific shell\n` +
-                                  `- Use send_input_to_shell to send input to shells waiting for user input\n` +
-                                  `- Shells are automatically cleaned up after ${SHELL_CLEANUP_TIMEOUT / 60 / 1000} minutes of inactivity`
+                                  `- Use \`execute_shell_command_code\` with shellId parameter to target a specific shell\n` +
+                                  `- Use \`send_input_to_shell\` to send input or capture output (last 20 lines)\n` +
+                                  `- Use \`close_shell\` to close shells you no longer need\n` +
+                                  `- Full output saved to: .vscode-mcp-output/{shellId}-output.txt\n` +
+                                  `- Shells auto-cleanup after ${SHELL_CLEANUP_TIMEOUT / 60 / 1000} minutes of inactivity`
                         }
                     ]
                 };
