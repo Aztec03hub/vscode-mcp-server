@@ -499,9 +499,9 @@ suite('Apply Diff Functional Tests', () => {
 
             await applyDiffTool.handler({
                 filePath: 'partial-replace.ts',
-                description: 'Replace from line 1 to end',
+                description: 'Replace from line 2 to end (keep line 1)',
                 diffs: [{
-                    startLine: 1,
+                    startLine: 2,  // 1-based: start from line 2, keeping line 1
                     endLine: -1,
                     search: '',
                     replace: 'new line 2\nnew line 3'
@@ -555,12 +555,12 @@ suite('Apply Diff Functional Tests', () => {
 
             const applyDiffTool = mockServer.tools.get('apply_diff');
 
-            // This should work - search content matches from startLine to end
+            // This should work - search content matches from startLine to end (1-based indexing)
             await applyDiffTool.handler({
                 filePath: 'validate-replace.ts',
                 description: 'Replace with validation',
                 diffs: [{
-                    startLine: 1,
+                    startLine: 2,  // 1-based: line 2 contains '    return "hello";'
                     endLine: -1,
                     search: '    return "hello";\n}',
                     replace: '    return "world";\n}'

@@ -55,11 +55,12 @@ suite('Shell Timeout Reset Integration Tests', () => {
             let timeoutFired = false;
             
             // Execute a quick command with timeout tracking
+            // Note: Windows PowerShell can take longer to initialize and execute
             const result = await executeShellCommand(
                 terminal,
                 'echo "test"',
                 undefined,
-                2000, // 2 second timeout
+                5000, // 5 second timeout (Windows PowerShell needs more time)
                 shellId
             );
             

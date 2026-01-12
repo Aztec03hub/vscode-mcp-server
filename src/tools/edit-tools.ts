@@ -1766,34 +1766,54 @@ async function createModifiedContent(
             // Use replacement content exactly as provided
             finalNewLines = newLines;
         } else {
-            // Preserve indentation from the original matched content for regular diffs
-            let indentationToPreserve = '';
-            if (match.startLine < lines.length && lines[match.startLine]) {
-                // Extract leading whitespace from the first line being replaced
-                const leadingWhitespace = lines[match.startLine].match(/^\s*/);
-                if (leadingWhitespace) {
-                    indentationToPreserve = leadingWhitespace[0];
-                }
-            }
-            
-            // Apply preserved indentation to new lines (except if it's already indented)
-            finalNewLines = newLines.map((line, index) => {
-                // Skip empty lines or lines that already have indentation
-                if (line === '' || line.match(/^\s/) || index === 0) {
-                    return line;
-                }
-                // Check if original content had this line indented
-                const originalLineIndex = match.startLine + index;
-                if (originalLineIndex <= match.endLine && originalLineIndex < lines.length) {
-                    const originalIndent = lines[originalLineIndex].match(/^\s*/);
-                    if (originalIndent && originalIndent[0]) {
-                        // Use original line's indentation
-                        return originalIndent[0] + line.trimStart();
+            // Detect if user is intentionally changing indentation structure
+            // by comparing search content vs replace content line-by-line
+            const searchLines = diff.search.split(/\r?\n/);
+            const hasIntentionalIndentStructureChange = (): boolean => {
+                const minLen = Math.min(searchLines.length, newLines.length);
+                for (let i = 0; i < minLen; i++) {
+                    const searchIndent = (searchLines[i].match(/^\s*/) || [''])[0];
+                    const replaceIndent = (newLines[i].match(/^\s*/) || [''])[0];
+                    if (searchIndent !== replaceIndent) {
+                        return true; // User changed indentation on at least one line
                     }
                 }
-                // Otherwise, use the indentation from the first line
-                return indentationToPreserve + line;
-            });
+                return false;
+            };
+            
+            // If user intentionally changed indentation structure, use replacement exactly
+            if (hasIntentionalIndentStructureChange()) {
+                finalNewLines = newLines;
+            } else {
+                // Preserve indentation from the original matched content for regular diffs
+                let indentationToPreserve = '';
+                if (match.startLine < lines.length && lines[match.startLine]) {
+                    // Extract leading whitespace from the first line being replaced
+                    const leadingWhitespace = lines[match.startLine].match(/^\s*/);
+                    if (leadingWhitespace) {
+                        indentationToPreserve = leadingWhitespace[0];
+                    }
+                }
+                
+                // Apply preserved indentation to new lines (except if it's already indented)
+                finalNewLines = newLines.map((line, index) => {
+                    // Skip empty lines or lines that already have indentation
+                    if (line === '' || line.match(/^\s/) || index === 0) {
+                        return line;
+                    }
+                    // Check if original content had this line indented
+                    const originalLineIndex = match.startLine + index;
+                    if (originalLineIndex <= match.endLine && originalLineIndex < lines.length) {
+                        const originalIndent = lines[originalLineIndex].match(/^\s*/);
+                        if (originalIndent && originalIndent[0]) {
+                            // Use original line's indentation
+                            return originalIndent[0] + line.trimStart();
+                        }
+                    }
+                    // Otherwise, use the indentation from the first line
+                    return indentationToPreserve + line;
+                });
+            }
         }
         
         // Special handling for new file insertions

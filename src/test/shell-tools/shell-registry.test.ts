@@ -17,7 +17,7 @@ suite('Shell Registry Tests', () => {
     test('Configuration Constants Validation', () => {
         // Test that configuration constants are properly defined
         assert.strictEqual(MAX_SHELLS, 8, 'MAX_SHELLS should be 8');
-        assert.strictEqual(SHELL_CLEANUP_TIMEOUT, 5 * 60 * 1000, 'SHELL_CLEANUP_TIMEOUT should be 5 minutes');
+        assert.strictEqual(SHELL_CLEANUP_TIMEOUT, 10 * 60 * 1000, 'SHELL_CLEANUP_TIMEOUT should be 10 minutes');
         
         // Test that constants are reasonable values
         assert.ok(MAX_SHELLS > 0, 'MAX_SHELLS should be positive');

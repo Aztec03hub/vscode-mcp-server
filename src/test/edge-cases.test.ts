@@ -198,4 +198,83 @@ suite('Edge Cases Tests', () => {
         assert.ok(text.includes('🌟✨🎯'), 'Should handle Unicode characters');
         assert.ok(text.includes('日本語コメント'), 'Should preserve other Unicode content');
     });
-});
+    
+    test('Multi-line indentation removal - should respect intentional indent changes', async () => {
+        // This test verifies that when the user explicitly removes indentation across
+        // multiple lines, ALL lines are updated, not just the first one.
+        // Bug: Previously only the first line's indentation was changed because the
+        // fuzzy matcher was "preserving relative indentation" from the original file.
+        
+        const indentedContent = `## Section Header
+
+        \`\`\`
+    indented line 1
+    indented line 2
+    indented line 3
+    indented line 4
+        \`\`\``;
+        
+        await createTestFile(indentedContent, 'test-indent-removal.md');
+        
+        // Apply diff that explicitly removes indentation from all lines
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 3,
+                endLine: 6,
+                search: '    indented line 1\n    indented line 2\n    indented line 3\n    indented line 4',
+                replace: 'unindented line 1\nunindented line 2\nunindented line 3\nunindented line 4'
+            }]
+        });
+        
+        const content = await vscode.workspace.fs.readFile(testFileUri);
+        const text = Buffer.from(content).toString('utf8');
+        
+        // Verify ALL lines had their indentation removed
+        assert.ok(text.includes('unindented line 1'), 'First line should be unindented');
+        assert.ok(text.includes('unindented line 2'), 'Second line should be unindented');
+        assert.ok(text.includes('unindented line 3'), 'Third line should be unindented');
+        assert.ok(text.includes('unindented line 4'), 'Fourth line should be unindented');
+        
+        // Verify no lines still have the original 4-space indentation
+        assert.ok(!text.includes('    unindented line'), 'No lines should have indentation added back');
+        assert.ok(!text.includes('    indented line'), 'No original indented lines should remain');
+    });
+    
+    test('Multi-line indentation change - should preserve intentional indent modifications', async () => {
+        // Test changing indentation from 4 spaces to 2 spaces across multiple lines
+        
+        const content4Spaces = `function test() {
+    line1;
+    line2;
+    line3;
+        }`;
+        
+        await createTestFile(content4Spaces, 'test-indent-change.ts');
+        
+        // Change 4-space indent to 2-space indent
+        const result = await vscode.commands.executeCommand('mcp.applyDiff', {
+            filePath: testFileName,
+            diffs: [{
+                startLine: 1,
+                endLine: 3,
+                search: '    line1;\n    line2;\n    line3;',
+                replace: '  line1;\n  line2;\n  line3;'
+            }]
+        });
+        
+        const content = await vscode.workspace.fs.readFile(testFileUri);
+        const text = Buffer.from(content).toString('utf8');
+        const lines = text.split('\n');
+        
+        // Verify all lines use 2-space indentation (not 4-space)
+        assert.ok(lines[1].startsWith('  line1;'), 'Line 1 should have 2-space indent');
+        assert.ok(lines[2].startsWith('  line2;'), 'Line 2 should have 2-space indent');
+        assert.ok(lines[3].startsWith('  line3;'), 'Line 3 should have 2-space indent');
+        
+        // Verify no 4-space indentation was preserved
+        assert.ok(!lines[1].startsWith('    '), 'Line 1 should not have 4-space indent');
+        assert.ok(!lines[2].startsWith('    '), 'Line 2 should not have 4-space indent');
+        assert.ok(!lines[3].startsWith('    '), 'Line 3 should not have 4-space indent');
+    });
+        });

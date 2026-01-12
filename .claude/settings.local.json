@@ -7,7 +7,13 @@
       "mcp__vscode-mcp-server__get_diagnostics_code",
       "mcp__vscode-mcp-server__search_symbols_code",
       "mcp__vscode-mcp-server__get_workspace_context",
-      "mcp__vscode-mcp-server__list_files_code"
+      "mcp__vscode-mcp-server__list_files_code",
+      "mcp__vscode-mcp-server__execute_shell_command_code",
+      "mcp__vscode-mcp-server__send_input_to_shell",
+      "mcp__vscode-mcp-server__list_active_shells",
+      "mcp__git__git_status",
+      "mcp__git__git_log",
+      "mcp__git__git_add"
     ],
     "deny": []
   }

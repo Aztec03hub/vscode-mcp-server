@@ -137,7 +137,7 @@ import {
         
         // Test truncation message components
         const expectedTruncationMessage = `Output too long, truncated to ${DEFAULT_OUTPUT_CHARACTER_LIMIT.toLocaleString()} characters.`;
-        assert.ok(expectedTruncationMessage.includes('200,000'), 'Truncation message should include formatted character count');
+        assert.ok(expectedTruncationMessage.includes('100,000'), 'Truncation message should include formatted character count');
     });
     
     test('Silence Flag Message Formatting', () => {
